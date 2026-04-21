@@ -23,37 +23,8 @@ class SkeletonPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // ── Draw connections (White Paint Style) ──
-    final paintShapeColor = Colors.white.withOpacity(0.8);
-    final glowColor = AppColors.accentCyan.withOpacity(0.4);
-
-    for (final connection in PoseConstants.skeletonConnections) {
-      final start = pose.landmarks[connection[0]];
-      final end = pose.landmarks[connection[1]];
-
-      if (start != null && end != null && start.likelihood > 0.5 && end.likelihood > 0.5) {
-        final startPoint = _translatePoint(start.x, start.y, size);
-        final endPoint = _translatePoint(end.x, end.y, size);
-
-        // Draw glow effect underneath
-        final glowPaint = Paint()
-          ..strokeWidth = 18.0
-          ..color = glowColor
-          ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke;
-        
-        canvas.drawLine(startPoint, endPoint, glowPaint);
-
-        // Draw thick white paint stroke
-        final linePaint = Paint()
-          ..strokeWidth = 10.0
-          ..color = paintShapeColor
-          ..strokeCap = StrokeCap.round
-          ..style = PaintingStyle.stroke;
-
-        canvas.drawLine(startPoint, endPoint, linePaint);
-      }
-    }
+    // Intentionally empty. Skeleton line/dot rendering has been removed per pro user request.
+    // The ML tracking continues silently in the background!
   }
 
   Offset _translatePoint(double x, double y, Size canvasSize) {

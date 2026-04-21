@@ -28,6 +28,7 @@ dependencies:
   network_info_plus: ^7.0.0
   http: ^1.6.0
   google_mlkit_selfie_segmentation: ^0.10.1
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

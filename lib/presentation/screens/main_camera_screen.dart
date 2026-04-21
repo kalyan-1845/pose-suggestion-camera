@@ -21,6 +21,7 @@ import 'collage_preview_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'mini_gallery_screen.dart';
 import 'pro_settings_screen.dart';
+import 'package:gal/gal.dart';
 
 /// Main camera screen mimicking standard OS camera with a "Poses" mode
 class MainCameraScreen extends StatefulWidget {
@@ -57,6 +58,15 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
   double _maxZoomLevel = 1.0;
   double _currentZoomLevel = 1.0;
   double _baseZoomLevel = 1.0;
+
+  // New Pro UI State
+  Offset? _focusPoint;
+  double _exposureValue = 0.0;
+  double _minExposure = 0.0;
+  double _maxExposure = 0.0;
+  bool _showFocusUI = false;
+  Timer? _focusTimer;
+  bool _isZoomDragging = false;
 
   // Video State
   bool _isRecordingVideo = false;
@@ -112,6 +122,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
       _maxZoomLevel = await _cameraController!.getMaxZoomLevel();
       _currentZoomLevel = _minZoomLevel;
 
+      _minExposure = await _cameraController!.getMinExposureOffset();
+      _maxExposure = await _cameraController!.getMaxExposureOffset();
+      _exposureValue = 0.0;
+
       // Setup auto-capture
       _autoCaptureController?.dispose();
       _autoCaptureController = AutoCaptureController(
@@ -141,6 +155,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   void _processFrame(CameraImage image) {
     if (!_poseDetectorService.isInitialized) return;
+    if (_isRecordingVideo) return; // Optimization: Pause AI during video recording for max clarity
+    
     final mode = _cameraModes[_selectedModeIndex];
     final isPoseMode = mode == 'Poses' || mode == 'Photo Booth';
 
@@ -359,9 +375,11 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
       final file = await _cameraController!.stopVideoRecording();
       setState(() => _isRecordingVideo = false);
       
-      // Handle video file (could pass to PreviewScreen, but keeping it simple and starting stream again to not break flow)
+      // Handle video file natively
+      await Gal.putVideo(file.path);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Video saved: ${file.path}')),
+        const SnackBar(content: Text('Video saved to System Gallery!')),
       );
 
       await _cameraController!.startImageStream(_processFrame);
@@ -375,6 +393,21 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
        context,
        MaterialPageRoute(builder: (_) => MiniGalleryScreen()),
     );
+  }
+
+  Future<void> _setExposure(double value) async {
+    if (_cameraController == null) return;
+    setState(() => _exposureValue = value);
+    try {
+      await _cameraController!.setExposureOffset(value);
+    } catch (e) {
+      debugPrint('Exposure error: $e');
+    }
+    // Reset focus UI timer so it doesn't disappear while adjusting exposure
+    _focusTimer?.cancel();
+    _focusTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showFocusUI = false);
+    });
   }
 
   @override
@@ -436,18 +469,31 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             },
             onTapDown: (details) async {
                if (_cameraController == null) return;
-               // Map tap to 0..1 range
+               
+               // Map tap to 0..1 range for camera controller
                final Size size = MediaQuery.of(context).size;
                final offset = Offset(
                  details.localPosition.dx / size.width,
                  details.localPosition.dy / size.height,
                );
+
+               setState(() {
+                 _focusPoint = details.localPosition;
+                 _showFocusUI = true;
+               });
+
                try {
                   await _cameraController!.setFocusPoint(offset);
                   await _cameraController!.setExposurePoint(offset);
                } catch (e) {
                   debugPrint('Focus error: $e');
                }
+
+               // Hide UI after 3 seconds of inactivity
+               _focusTimer?.cancel();
+               _focusTimer = Timer(const Duration(seconds: 3), () {
+                 if (mounted) setState(() => _showFocusUI = false);
+               });
             },
             child: ClipRect(
               child: AnimatedContainer(
@@ -477,19 +523,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                 ),
               ),
 
-            // Live User Skeleton/Outline
-            if (_currentPose != null)
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: SkeletonPainter(
-                    pose: _currentPose!,
-                    imageSize: _imageSize,
-                    rotation: _imageRotation,
-                    matchResult: _matchResult,
-                    isFrontCamera: _currentCameraIndex == 1,
-                  ),
-                ),
-              ),
+            // Skeleton rendering removed per user request for cleaner UI
+            // The AI logic for matching still runs in background.
 
             // Match Score Indicator (top right)
             Positioned(
@@ -535,6 +570,150 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
               ),
             ),
           ],
+
+          // ── Pro Zoom Controller (One-hand dial) ──
+          Positioned(
+            bottom: 180,
+            left: 0,
+            right: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Quick Selectors
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _ZoomQuickBtn(label: '0.5x', value: 0.5, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, 
+                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
+                    const SizedBox(width: 12),
+                    _ZoomQuickBtn(label: '1x', value: 1.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel,
+                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
+                    const SizedBox(width: 12),
+                    _ZoomQuickBtn(label: '2x', value: 2.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel,
+                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
+                    const SizedBox(width: 12),
+                    _ZoomQuickBtn(label: '5x', value: 5.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel,
+                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Smooth Drag Dial
+                SizedBox(
+                  width: 250,
+                  height: 40,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 1,
+                      activeTrackColor: Colors.white38,
+                      inactiveTrackColor: Colors.white12,
+                      thumbColor: Colors.white,
+                      overlayColor: Colors.white.withOpacity(0.1),
+                    ),
+                    child: Slider(
+                      value: _currentZoomLevel,
+                      min: _minZoomLevel,
+                      max: _maxZoomLevel,
+                      onChangeStart: (_) => setState(() => _isZoomDragging = true),
+                      onChangeEnd: (_) {
+                        setState(() => _isZoomDragging = false);
+                        // Smart Focus: Trigger refocus after zoom to ensure maximum clarity
+                        _cameraController?.setFocusMode(FocusMode.auto);
+                      },
+                      onChanged: (v) {
+                         setState(() => _currentZoomLevel = v);
+                         _cameraController?.setZoomLevel(v);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Pro Focus & Exposure UI ──
+          if (_showFocusUI && _focusPoint != null)
+            Positioned(
+              left: _focusPoint!.dx - 40,
+              top: _focusPoint!.dy - 60,
+              child: Row(
+                children: [
+                  // Focal Box
+                  Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.yellow, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Exposure Slider
+                  SizedBox(
+                    height: 120,
+                    child: RotatedBox(
+                      quarterTurns: 3,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 2,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                          activeTrackColor: Colors.yellow,
+                          inactiveTrackColor: Colors.white24,
+                          thumbColor: Colors.yellow,
+                        ),
+                        child: Slider(
+                          value: _exposureValue,
+                          min: _minExposure,
+                          max: _maxExposure,
+                          onChanged: _setExposure,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                       const Icon(Icons.wb_sunny, color: Colors.yellow, size: 18),
+                       const SizedBox(height: 4),
+                       Text('${_exposureValue > 0 ? '+' : ''}${_exposureValue.toStringAsFixed(1)}', 
+                           style: const TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+          // ── AI Dynamic Stats ──
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 50,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black38,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.auto_awesome, color: Colors.white, size: 14),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isZoomDragging ? "CALIBRATING OPTICS..." : "AI ANALYZING POSE...",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
 
           // ── Top Action Bar ──
           Positioned(
@@ -802,6 +981,54 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
           if (_showFlash)
             const CaptureFlash(),
         ],
+      ),
+    );
+  }
+}
+
+class _ZoomQuickBtn extends StatelessWidget {
+  final String label;
+  final double value;
+  final double current;
+  final double min;
+  final double max;
+  final Function(double) onTap;
+
+  const _ZoomQuickBtn({
+    required this.label,
+    required this.value,
+    required this.current,
+    required this.min,
+    required this.max,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // If this specific value isn't supported by hardware, don't show or disable
+    if (value < min && value != 0.5) return const SizedBox.shrink(); 
+    if (value > max) return const SizedBox.shrink();
+
+    final isSelected = (current - value).abs() < 0.1;
+
+    return GestureDetector(
+      onTap: () => onTap(value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.yellow.withOpacity(0.9) : Colors.black45,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: isSelected ? Colors.yellow : Colors.white24, width: 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }

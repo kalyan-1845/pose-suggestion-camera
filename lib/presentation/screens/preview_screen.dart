@@ -6,6 +6,7 @@ import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'wifi_share_screen.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
+import 'package:gal/gal.dart';
 import '../../core/constants/app_colors.dart';
 
 /// Preview screen for captured photo with save/share/retake options
@@ -48,6 +49,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
       final savedPath = '${directory.path}/$fileName';
 
       await File(_currentImagePath).copy(savedPath);
+
+      // Save natively to System Gallery using Gal package
+      await Gal.putImage(_currentImagePath);
 
       if (mounted) {
         setState(() => _isSaved = true);

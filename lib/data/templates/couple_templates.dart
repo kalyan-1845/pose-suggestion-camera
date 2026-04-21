@@ -1,0 +1,311 @@
+import '../models/pose_template.dart';
+
+/// 13 Couple pose templates with normalized keypoints
+class CoupleTemplates {
+  CoupleTemplates._();
+
+  static List<PoseTemplate> get all => [
+    _heartHands, _foreheadTouch, _backToBack, _piggyback, _theDip,
+    _handInHand, _sittingSideBySide, _hugFromBehind, _lookingAtEachOther,
+    _liftAndSpin, _cheekToCheek, _dancingTogether, _mirrorPose,
+  ];
+
+  static const _heartHands = PoseTemplate(
+    id: 'couple_01', name: 'Heart Hands', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['any'], emoji: '💕',
+    instruction: 'Stand side by side, make a heart shape with your hands together!',
+    keypoints: [
+      {'x': 0.35, 'y': 0.05}, {'x': 0.33, 'y': 0.03}, {'x': 0.32, 'y': 0.03}, {'x': 0.31, 'y': 0.03},
+      {'x': 0.37, 'y': 0.03}, {'x': 0.38, 'y': 0.03}, {'x': 0.39, 'y': 0.03},
+      {'x': 0.29, 'y': 0.05}, {'x': 0.41, 'y': 0.05},
+      {'x': 0.34, 'y': 0.07}, {'x': 0.36, 'y': 0.07},
+      {'x': 0.22, 'y': 0.22}, {'x': 0.48, 'y': 0.22},
+      {'x': 0.25, 'y': 0.32}, {'x': 0.45, 'y': 0.15},
+      {'x': 0.30, 'y': 0.40}, {'x': 0.48, 'y': 0.12},
+      {'x': 0.29, 'y': 0.42}, {'x': 0.49, 'y': 0.11}, {'x': 0.31, 'y': 0.41}, {'x': 0.47, 'y': 0.12},
+      {'x': 0.32, 'y': 0.40}, {'x': 0.46, 'y': 0.13},
+      {'x': 0.28, 'y': 0.52}, {'x': 0.48, 'y': 0.52},
+      {'x': 0.28, 'y': 0.73}, {'x': 0.48, 'y': 0.73},
+      {'x': 0.28, 'y': 0.95}, {'x': 0.48, 'y': 0.95},
+      {'x': 0.26, 'y': 0.97}, {'x': 0.46, 'y': 0.97},
+      {'x': 0.30, 'y': 1.00}, {'x': 0.50, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 120.0, 'rightElbow': 120.0, 'leftShoulder': 35.0, 'rightShoulder': 130.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+
+  static const _foreheadTouch = PoseTemplate(
+    id: 'couple_02', name: 'Forehead Touch', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['park', 'beach', 'sunset'], emoji: '🥰',
+    instruction: 'Face each other and gently touch foreheads!',
+    keypoints: [
+      {'x': 0.48, 'y': 0.05}, {'x': 0.46, 'y': 0.03}, {'x': 0.45, 'y': 0.03}, {'x': 0.44, 'y': 0.03},
+      {'x': 0.50, 'y': 0.03}, {'x': 0.51, 'y': 0.03}, {'x': 0.52, 'y': 0.03},
+      {'x': 0.42, 'y': 0.05}, {'x': 0.54, 'y': 0.05},
+      {'x': 0.47, 'y': 0.07}, {'x': 0.49, 'y': 0.07},
+      {'x': 0.32, 'y': 0.22}, {'x': 0.62, 'y': 0.22},
+      {'x': 0.28, 'y': 0.38}, {'x': 0.58, 'y': 0.38},
+      {'x': 0.30, 'y': 0.50}, {'x': 0.55, 'y': 0.50},
+      {'x': 0.29, 'y': 0.52}, {'x': 0.54, 'y': 0.52}, {'x': 0.31, 'y': 0.51}, {'x': 0.56, 'y': 0.51},
+      {'x': 0.32, 'y': 0.50}, {'x': 0.53, 'y': 0.50},
+      {'x': 0.35, 'y': 0.52}, {'x': 0.60, 'y': 0.52},
+      {'x': 0.35, 'y': 0.73}, {'x': 0.60, 'y': 0.73},
+      {'x': 0.35, 'y': 0.95}, {'x': 0.60, 'y': 0.95},
+      {'x': 0.33, 'y': 0.97}, {'x': 0.58, 'y': 0.97},
+      {'x': 0.37, 'y': 1.00}, {'x': 0.62, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 140.0, 'rightElbow': 140.0, 'leftShoulder': 20.0, 'rightShoulder': 20.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+
+  static const _backToBack = PoseTemplate(
+    id: 'couple_03', name: 'Back to Back', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['urban', 'indoor', 'any'], emoji: '🔥',
+    instruction: 'Stand back-to-back with arms crossed, look cool!',
+    keypoints: [
+      {'x': 0.42, 'y': 0.05}, {'x': 0.40, 'y': 0.03}, {'x': 0.39, 'y': 0.03}, {'x': 0.38, 'y': 0.03},
+      {'x': 0.44, 'y': 0.03}, {'x': 0.45, 'y': 0.03}, {'x': 0.46, 'y': 0.03},
+      {'x': 0.36, 'y': 0.05}, {'x': 0.48, 'y': 0.05},
+      {'x': 0.41, 'y': 0.07}, {'x': 0.43, 'y': 0.07},
+      {'x': 0.30, 'y': 0.22}, {'x': 0.55, 'y': 0.22},
+      {'x': 0.35, 'y': 0.32}, {'x': 0.50, 'y': 0.32},
+      {'x': 0.38, 'y': 0.30}, {'x': 0.48, 'y': 0.30},
+      {'x': 0.37, 'y': 0.31}, {'x': 0.49, 'y': 0.31}, {'x': 0.39, 'y': 0.29}, {'x': 0.47, 'y': 0.29},
+      {'x': 0.40, 'y': 0.30}, {'x': 0.46, 'y': 0.30},
+      {'x': 0.35, 'y': 0.52}, {'x': 0.55, 'y': 0.52},
+      {'x': 0.35, 'y': 0.73}, {'x': 0.55, 'y': 0.73},
+      {'x': 0.35, 'y': 0.95}, {'x': 0.55, 'y': 0.95},
+      {'x': 0.33, 'y': 0.97}, {'x': 0.53, 'y': 0.97},
+      {'x': 0.37, 'y': 1.00}, {'x': 0.57, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 50.0, 'rightElbow': 50.0, 'leftShoulder': 45.0, 'rightShoulder': 45.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+
+  static const _piggyback = PoseTemplate(
+    id: 'couple_04', name: 'Piggyback Ride', category: 'couple', personCount: 2,
+    difficulty: 'medium', placeTags: ['beach', 'park', 'any'], emoji: '🐷',
+    instruction: 'One person carries the other on their back!',
+    keypoints: [
+      {'x': 0.50, 'y': 0.00}, {'x': 0.48, 'y': 0.00}, {'x': 0.47, 'y': 0.00}, {'x': 0.46, 'y': 0.00},
+      {'x': 0.52, 'y': 0.00}, {'x': 0.53, 'y': 0.00}, {'x': 0.54, 'y': 0.00},
+      {'x': 0.44, 'y': 0.02}, {'x': 0.56, 'y': 0.02},
+      {'x': 0.49, 'y': 0.03}, {'x': 0.51, 'y': 0.03},
+      {'x': 0.38, 'y': 0.15}, {'x': 0.62, 'y': 0.15},
+      {'x': 0.30, 'y': 0.28}, {'x': 0.70, 'y': 0.28},
+      {'x': 0.38, 'y': 0.32}, {'x': 0.62, 'y': 0.32},
+      {'x': 0.37, 'y': 0.33}, {'x': 0.63, 'y': 0.33}, {'x': 0.39, 'y': 0.31}, {'x': 0.61, 'y': 0.31},
+      {'x': 0.40, 'y': 0.32}, {'x': 0.60, 'y': 0.32},
+      {'x': 0.42, 'y': 0.45}, {'x': 0.58, 'y': 0.45},
+      {'x': 0.40, 'y': 0.68}, {'x': 0.60, 'y': 0.68},
+      {'x': 0.40, 'y': 0.90}, {'x': 0.60, 'y': 0.90},
+      {'x': 0.38, 'y': 0.93}, {'x': 0.58, 'y': 0.93},
+      {'x': 0.42, 'y': 0.95}, {'x': 0.62, 'y': 0.95},
+    ],
+    keyAngles: {'leftElbow': 90.0, 'rightElbow': 90.0, 'leftShoulder': 50.0, 'rightShoulder': 50.0, 'leftHip': 160.0, 'rightHip': 160.0, 'leftKnee': 170.0, 'rightKnee': 170.0},
+  );
+
+  static const _theDip = PoseTemplate(
+    id: 'couple_05', name: 'The Dip', category: 'couple', personCount: 2,
+    difficulty: 'hard', placeTags: ['indoor', 'event', 'park'], emoji: '🩰',
+    instruction: 'One person dips the other back dramatically!',
+    keypoints: [
+      {'x': 0.55, 'y': 0.15}, {'x': 0.53, 'y': 0.13}, {'x': 0.52, 'y': 0.13}, {'x': 0.51, 'y': 0.13},
+      {'x': 0.57, 'y': 0.13}, {'x': 0.58, 'y': 0.13}, {'x': 0.59, 'y': 0.13},
+      {'x': 0.49, 'y': 0.15}, {'x': 0.61, 'y': 0.15},
+      {'x': 0.54, 'y': 0.17}, {'x': 0.56, 'y': 0.17},
+      {'x': 0.42, 'y': 0.28}, {'x': 0.65, 'y': 0.28},
+      {'x': 0.35, 'y': 0.35}, {'x': 0.60, 'y': 0.40},
+      {'x': 0.30, 'y': 0.25}, {'x': 0.55, 'y': 0.50},
+      {'x': 0.29, 'y': 0.26}, {'x': 0.54, 'y': 0.52}, {'x': 0.31, 'y': 0.24}, {'x': 0.56, 'y': 0.51},
+      {'x': 0.32, 'y': 0.25}, {'x': 0.53, 'y': 0.50},
+      {'x': 0.45, 'y': 0.50}, {'x': 0.62, 'y': 0.55},
+      {'x': 0.48, 'y': 0.72}, {'x': 0.60, 'y': 0.75},
+      {'x': 0.50, 'y': 0.93}, {'x': 0.58, 'y': 0.95},
+      {'x': 0.48, 'y': 0.95}, {'x': 0.56, 'y': 0.97},
+      {'x': 0.52, 'y': 0.98}, {'x': 0.60, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 140.0, 'rightElbow': 120.0, 'leftShoulder': 60.0, 'rightShoulder': 30.0, 'leftHip': 130.0, 'rightHip': 160.0, 'leftKnee': 170.0, 'rightKnee': 175.0},
+  );
+
+  static const _handInHand = PoseTemplate(
+    id: 'couple_06', name: 'Hand in Hand', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['beach', 'park', 'urban'], emoji: '🤝',
+    instruction: 'Walk together holding hands, look at each other!',
+    keypoints: [
+      {'x': 0.35, 'y': 0.05}, {'x': 0.33, 'y': 0.03}, {'x': 0.32, 'y': 0.03}, {'x': 0.31, 'y': 0.03},
+      {'x': 0.37, 'y': 0.03}, {'x': 0.38, 'y': 0.03}, {'x': 0.39, 'y': 0.03},
+      {'x': 0.29, 'y': 0.05}, {'x': 0.41, 'y': 0.05},
+      {'x': 0.34, 'y': 0.07}, {'x': 0.36, 'y': 0.07},
+      {'x': 0.25, 'y': 0.22}, {'x': 0.45, 'y': 0.22},
+      {'x': 0.20, 'y': 0.38}, {'x': 0.48, 'y': 0.35},
+      {'x': 0.18, 'y': 0.50}, {'x': 0.50, 'y': 0.48},
+      {'x': 0.17, 'y': 0.52}, {'x': 0.51, 'y': 0.49}, {'x': 0.19, 'y': 0.51}, {'x': 0.49, 'y': 0.48},
+      {'x': 0.20, 'y': 0.50}, {'x': 0.48, 'y': 0.47},
+      {'x': 0.28, 'y': 0.52}, {'x': 0.50, 'y': 0.52},
+      {'x': 0.28, 'y': 0.73}, {'x': 0.50, 'y': 0.73},
+      {'x': 0.28, 'y': 0.95}, {'x': 0.50, 'y': 0.95},
+      {'x': 0.26, 'y': 0.97}, {'x': 0.48, 'y': 0.97},
+      {'x': 0.30, 'y': 1.00}, {'x': 0.52, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 160.0, 'rightElbow': 155.0, 'leftShoulder': 20.0, 'rightShoulder': 20.0, 'leftHip': 165.0, 'rightHip': 165.0, 'leftKnee': 170.0, 'rightKnee': 170.0},
+  );
+
+  static const _sittingSideBySide = PoseTemplate(
+    id: 'couple_07', name: 'Sitting Together', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['park', 'steps', 'cafe'], emoji: '🪑',
+    instruction: 'Sit side by side, lean into each other naturally!',
+    keypoints: [
+      {'x': 0.38, 'y': 0.10}, {'x': 0.36, 'y': 0.08}, {'x': 0.35, 'y': 0.08}, {'x': 0.34, 'y': 0.08},
+      {'x': 0.40, 'y': 0.08}, {'x': 0.41, 'y': 0.08}, {'x': 0.42, 'y': 0.08},
+      {'x': 0.32, 'y': 0.10}, {'x': 0.44, 'y': 0.10},
+      {'x': 0.37, 'y': 0.12}, {'x': 0.39, 'y': 0.12},
+      {'x': 0.28, 'y': 0.28}, {'x': 0.50, 'y': 0.28},
+      {'x': 0.22, 'y': 0.42}, {'x': 0.55, 'y': 0.42},
+      {'x': 0.25, 'y': 0.55}, {'x': 0.52, 'y': 0.55},
+      {'x': 0.24, 'y': 0.57}, {'x': 0.51, 'y': 0.57}, {'x': 0.26, 'y': 0.56}, {'x': 0.53, 'y': 0.56},
+      {'x': 0.27, 'y': 0.55}, {'x': 0.50, 'y': 0.55},
+      {'x': 0.32, 'y': 0.58}, {'x': 0.52, 'y': 0.58},
+      {'x': 0.25, 'y': 0.72}, {'x': 0.55, 'y': 0.72},
+      {'x': 0.30, 'y': 0.90}, {'x': 0.58, 'y': 0.90},
+      {'x': 0.28, 'y': 0.93}, {'x': 0.56, 'y': 0.93},
+      {'x': 0.32, 'y': 0.95}, {'x': 0.60, 'y': 0.95},
+    ],
+    keyAngles: {'leftElbow': 120.0, 'rightElbow': 120.0, 'leftShoulder': 25.0, 'rightShoulder': 25.0, 'leftHip': 90.0, 'rightHip': 90.0, 'leftKnee': 90.0, 'rightKnee': 90.0},
+  );
+
+  static const _hugFromBehind = PoseTemplate(
+    id: 'couple_08', name: 'Hug from Behind', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['beach', 'sunset', 'mountain'], emoji: '🤗',
+    instruction: 'One person hugs the other from behind, both face forward!',
+    keypoints: [
+      {'x': 0.50, 'y': 0.05}, {'x': 0.48, 'y': 0.03}, {'x': 0.47, 'y': 0.03}, {'x': 0.46, 'y': 0.03},
+      {'x': 0.52, 'y': 0.03}, {'x': 0.53, 'y': 0.03}, {'x': 0.54, 'y': 0.03},
+      {'x': 0.44, 'y': 0.05}, {'x': 0.56, 'y': 0.05},
+      {'x': 0.49, 'y': 0.07}, {'x': 0.51, 'y': 0.07},
+      {'x': 0.38, 'y': 0.22}, {'x': 0.62, 'y': 0.22},
+      {'x': 0.42, 'y': 0.35}, {'x': 0.58, 'y': 0.35},
+      {'x': 0.55, 'y': 0.38}, {'x': 0.45, 'y': 0.38},
+      {'x': 0.56, 'y': 0.39}, {'x': 0.44, 'y': 0.39}, {'x': 0.54, 'y': 0.37}, {'x': 0.46, 'y': 0.37},
+      {'x': 0.53, 'y': 0.38}, {'x': 0.47, 'y': 0.38},
+      {'x': 0.40, 'y': 0.52}, {'x': 0.60, 'y': 0.52},
+      {'x': 0.40, 'y': 0.73}, {'x': 0.60, 'y': 0.73},
+      {'x': 0.40, 'y': 0.95}, {'x': 0.60, 'y': 0.95},
+      {'x': 0.38, 'y': 0.97}, {'x': 0.58, 'y': 0.97},
+      {'x': 0.42, 'y': 1.00}, {'x': 0.62, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 80.0, 'rightElbow': 80.0, 'leftShoulder': 40.0, 'rightShoulder': 40.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+
+  static const _lookingAtEachOther = PoseTemplate(
+    id: 'couple_09', name: 'Looking at Each Other', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['any'], emoji: '👀',
+    instruction: 'Face each other closely, look into each other\'s eyes!',
+    keypoints: [
+      {'x': 0.45, 'y': 0.05}, {'x': 0.43, 'y': 0.03}, {'x': 0.42, 'y': 0.03}, {'x': 0.41, 'y': 0.03},
+      {'x': 0.47, 'y': 0.03}, {'x': 0.48, 'y': 0.03}, {'x': 0.49, 'y': 0.03},
+      {'x': 0.39, 'y': 0.05}, {'x': 0.51, 'y': 0.05},
+      {'x': 0.44, 'y': 0.07}, {'x': 0.46, 'y': 0.07},
+      {'x': 0.33, 'y': 0.22}, {'x': 0.58, 'y': 0.22},
+      {'x': 0.28, 'y': 0.38}, {'x': 0.55, 'y': 0.38},
+      {'x': 0.30, 'y': 0.50}, {'x': 0.52, 'y': 0.50},
+      {'x': 0.29, 'y': 0.52}, {'x': 0.51, 'y': 0.52}, {'x': 0.31, 'y': 0.51}, {'x': 0.53, 'y': 0.51},
+      {'x': 0.32, 'y': 0.50}, {'x': 0.50, 'y': 0.50},
+      {'x': 0.35, 'y': 0.52}, {'x': 0.58, 'y': 0.52},
+      {'x': 0.35, 'y': 0.73}, {'x': 0.58, 'y': 0.73},
+      {'x': 0.35, 'y': 0.95}, {'x': 0.58, 'y': 0.95},
+      {'x': 0.33, 'y': 0.97}, {'x': 0.56, 'y': 0.97},
+      {'x': 0.37, 'y': 1.00}, {'x': 0.60, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 155.0, 'rightElbow': 155.0, 'leftShoulder': 18.0, 'rightShoulder': 18.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+
+  static const _liftAndSpin = PoseTemplate(
+    id: 'couple_10', name: 'Lift & Spin', category: 'couple', personCount: 2,
+    difficulty: 'hard', placeTags: ['beach', 'park', 'any'], emoji: '🌀',
+    instruction: 'One person lifts the other with arms around waist!',
+    keypoints: [
+      {'x': 0.50, 'y': 0.00}, {'x': 0.48, 'y': 0.00}, {'x': 0.47, 'y': 0.00}, {'x': 0.46, 'y': 0.00},
+      {'x': 0.52, 'y': 0.00}, {'x': 0.53, 'y': 0.00}, {'x': 0.54, 'y': 0.00},
+      {'x': 0.44, 'y': 0.02}, {'x': 0.56, 'y': 0.02},
+      {'x': 0.49, 'y': 0.03}, {'x': 0.51, 'y': 0.03},
+      {'x': 0.35, 'y': 0.12}, {'x': 0.65, 'y': 0.12},
+      {'x': 0.22, 'y': 0.12}, {'x': 0.78, 'y': 0.12},
+      {'x': 0.10, 'y': 0.12}, {'x': 0.90, 'y': 0.12},
+      {'x': 0.09, 'y': 0.13}, {'x': 0.91, 'y': 0.13}, {'x': 0.11, 'y': 0.11}, {'x': 0.89, 'y': 0.11},
+      {'x': 0.12, 'y': 0.12}, {'x': 0.88, 'y': 0.12},
+      {'x': 0.42, 'y': 0.35}, {'x': 0.58, 'y': 0.35},
+      {'x': 0.40, 'y': 0.58}, {'x': 0.60, 'y': 0.58},
+      {'x': 0.42, 'y': 0.82}, {'x': 0.58, 'y': 0.82},
+      {'x': 0.40, 'y': 0.85}, {'x': 0.56, 'y': 0.85},
+      {'x': 0.44, 'y': 0.88}, {'x': 0.60, 'y': 0.88},
+    ],
+    keyAngles: {'leftElbow': 170.0, 'rightElbow': 170.0, 'leftShoulder': 85.0, 'rightShoulder': 85.0, 'leftHip': 170.0, 'rightHip': 170.0, 'leftKnee': 175.0, 'rightKnee': 175.0},
+  );
+
+  static const _cheekToCheek = PoseTemplate(
+    id: 'couple_11', name: 'Cheek to Cheek', category: 'couple', personCount: 2,
+    difficulty: 'easy', placeTags: ['any'], emoji: '😊',
+    instruction: 'Press your cheeks together and smile at the camera!',
+    keypoints: [
+      {'x': 0.48, 'y': 0.05}, {'x': 0.46, 'y': 0.03}, {'x': 0.45, 'y': 0.03}, {'x': 0.44, 'y': 0.03},
+      {'x': 0.50, 'y': 0.03}, {'x': 0.51, 'y': 0.03}, {'x': 0.52, 'y': 0.03},
+      {'x': 0.42, 'y': 0.05}, {'x': 0.54, 'y': 0.05},
+      {'x': 0.47, 'y': 0.07}, {'x': 0.49, 'y': 0.07},
+      {'x': 0.35, 'y': 0.22}, {'x': 0.62, 'y': 0.22},
+      {'x': 0.30, 'y': 0.38}, {'x': 0.58, 'y': 0.38},
+      {'x': 0.32, 'y': 0.50}, {'x': 0.55, 'y': 0.50},
+      {'x': 0.31, 'y': 0.52}, {'x': 0.54, 'y': 0.52}, {'x': 0.33, 'y': 0.51}, {'x': 0.56, 'y': 0.51},
+      {'x': 0.34, 'y': 0.50}, {'x': 0.53, 'y': 0.50},
+      {'x': 0.38, 'y': 0.52}, {'x': 0.60, 'y': 0.52},
+      {'x': 0.38, 'y': 0.73}, {'x': 0.60, 'y': 0.73},
+      {'x': 0.38, 'y': 0.95}, {'x': 0.60, 'y': 0.95},
+      {'x': 0.36, 'y': 0.97}, {'x': 0.58, 'y': 0.97},
+      {'x': 0.40, 'y': 1.00}, {'x': 0.62, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 150.0, 'rightElbow': 150.0, 'leftShoulder': 18.0, 'rightShoulder': 18.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+
+  static const _dancingTogether = PoseTemplate(
+    id: 'couple_12', name: 'Dancing Together', category: 'couple', personCount: 2,
+    difficulty: 'medium', placeTags: ['indoor', 'event', 'park'], emoji: '💃',
+    instruction: 'Hold each other in a classic dance pose!',
+    keypoints: [
+      {'x': 0.42, 'y': 0.05}, {'x': 0.40, 'y': 0.03}, {'x': 0.39, 'y': 0.03}, {'x': 0.38, 'y': 0.03},
+      {'x': 0.44, 'y': 0.03}, {'x': 0.45, 'y': 0.03}, {'x': 0.46, 'y': 0.03},
+      {'x': 0.36, 'y': 0.05}, {'x': 0.48, 'y': 0.05},
+      {'x': 0.41, 'y': 0.07}, {'x': 0.43, 'y': 0.07},
+      {'x': 0.30, 'y': 0.22}, {'x': 0.55, 'y': 0.22},
+      {'x': 0.20, 'y': 0.22}, {'x': 0.58, 'y': 0.35},
+      {'x': 0.15, 'y': 0.20}, {'x': 0.60, 'y': 0.42},
+      {'x': 0.14, 'y': 0.21}, {'x': 0.61, 'y': 0.43}, {'x': 0.16, 'y': 0.19}, {'x': 0.59, 'y': 0.41},
+      {'x': 0.17, 'y': 0.20}, {'x': 0.58, 'y': 0.42},
+      {'x': 0.35, 'y': 0.52}, {'x': 0.55, 'y': 0.52},
+      {'x': 0.32, 'y': 0.73}, {'x': 0.55, 'y': 0.73},
+      {'x': 0.35, 'y': 0.95}, {'x': 0.55, 'y': 0.95},
+      {'x': 0.33, 'y': 0.97}, {'x': 0.53, 'y': 0.97},
+      {'x': 0.37, 'y': 1.00}, {'x': 0.57, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 95.0, 'rightElbow': 100.0, 'leftShoulder': 80.0, 'rightShoulder': 35.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 175.0, 'rightKnee': 175.0},
+  );
+
+  static const _mirrorPose = PoseTemplate(
+    id: 'couple_13', name: 'Mirror Pose', category: 'couple', personCount: 2,
+    difficulty: 'medium', placeTags: ['urban', 'indoor'], emoji: '🪞',
+    instruction: 'Face each other and mirror the same pose exactly!',
+    keypoints: [
+      {'x': 0.50, 'y': 0.05}, {'x': 0.48, 'y': 0.03}, {'x': 0.47, 'y': 0.03}, {'x': 0.46, 'y': 0.03},
+      {'x': 0.52, 'y': 0.03}, {'x': 0.53, 'y': 0.03}, {'x': 0.54, 'y': 0.03},
+      {'x': 0.44, 'y': 0.05}, {'x': 0.56, 'y': 0.05},
+      {'x': 0.49, 'y': 0.07}, {'x': 0.51, 'y': 0.07},
+      {'x': 0.35, 'y': 0.22}, {'x': 0.65, 'y': 0.22},
+      {'x': 0.20, 'y': 0.15}, {'x': 0.80, 'y': 0.15},
+      {'x': 0.10, 'y': 0.10}, {'x': 0.90, 'y': 0.10},
+      {'x': 0.09, 'y': 0.11}, {'x': 0.91, 'y': 0.11}, {'x': 0.11, 'y': 0.09}, {'x': 0.89, 'y': 0.09},
+      {'x': 0.12, 'y': 0.10}, {'x': 0.88, 'y': 0.10},
+      {'x': 0.40, 'y': 0.52}, {'x': 0.60, 'y': 0.52},
+      {'x': 0.40, 'y': 0.73}, {'x': 0.60, 'y': 0.73},
+      {'x': 0.40, 'y': 0.95}, {'x': 0.60, 'y': 0.95},
+      {'x': 0.38, 'y': 0.97}, {'x': 0.58, 'y': 0.97},
+      {'x': 0.42, 'y': 1.00}, {'x': 0.62, 'y': 1.00},
+    ],
+    keyAngles: {'leftElbow': 155.0, 'rightElbow': 155.0, 'leftShoulder': 130.0, 'rightShoulder': 130.0, 'leftHip': 175.0, 'rightHip': 175.0, 'leftKnee': 178.0, 'rightKnee': 178.0},
+  );
+}

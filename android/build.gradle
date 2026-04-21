@@ -1,0 +1,34 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    def setNdkVersion = {
+        if (it.hasProperty("android")) {
+            it.android {
+                ndkVersion = "27.1.12297006"
+            }
+        }
+    }
+    if (project.state.executed) {
+        setNdkVersion(project)
+    } else {
+        project.afterEvaluate { setNdkVersion(it) }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

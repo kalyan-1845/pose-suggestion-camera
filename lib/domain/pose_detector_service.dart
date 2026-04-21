@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 import '../core/utils/image_utils.dart';
 
 /// Service that wraps Google ML Kit Pose Detection
@@ -9,8 +10,10 @@ class PoseDetectorService {
   PoseDetector? _poseDetector;
   bool _isProcessing = false;
   bool _isInitialized = false;
+  SelfieSegmenter? _segmenter;
+  SegmentationMask? _lastMask;
   int _frameSkipCount = 0;
-  static const int _frameSkipInterval = 2; // Process every 2nd frame
+  static const int _frameSkipInterval = 1; // Faster: Process every frame if possible
 
   /// Initialize the pose detector
   void initialize() {
@@ -19,6 +22,11 @@ class PoseDetectorService {
       mode: PoseDetectionMode.stream,
     );
     _poseDetector = PoseDetector(options: options);
+    
+    _segmenter = SelfieSegmenter(
+      mode: SegmenterMode.stream,
+    );
+
     _isInitialized = true;
   }
 
@@ -50,6 +58,12 @@ class PoseDetectorService {
       }
 
       final poses = await _poseDetector!.processImage(inputImage);
+      
+      // Process segmentation mask if needed (only every 3rd frame to save CPU)
+      if (_frameSkipCount % 3 == 0 && _segmenter != null) {
+        _lastMask = await _segmenter!.processImage(inputImage);
+      }
+
       _isProcessing = false;
       return poses;
     } catch (e) {
@@ -64,10 +78,15 @@ class PoseDetectorService {
   /// Check if currently processing
   bool get isProcessing => _isProcessing;
 
+  /// Getter for last detected segmentation mask
+  SegmentationMask? get lastMask => _lastMask;
+
   /// Dispose the detector and release resources
   Future<void> dispose() async {
     _isInitialized = false;
     await _poseDetector?.close();
+    await _segmenter?.close();
     _poseDetector = null;
+    _segmenter = null;
   }
 }

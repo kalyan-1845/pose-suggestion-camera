@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../../core/constants/app_colors.dart';
@@ -25,6 +27,9 @@ import 'wifi_share_screen.dart';
 import 'package:gal/gal.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import '../../core/utils/watermark_service.dart';
+import '../../domain/voice_guidance_service.dart';
+import '../../domain/gesture_controller.dart';
 
 /// Main camera screen mimicking standard OS camera with a "Poses" mode
 class MainCameraScreen extends StatefulWidget {
@@ -41,6 +46,11 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   final PoseDetectorService _poseDetectorService = PoseDetectorService();
   AutoCaptureController? _autoCaptureController;
+  final VoiceGuidanceService _voiceService = VoiceGuidanceService();
+  final GestureController _gestureController = GestureController();
+  
+  bool _voiceEnabled = true;
+  bool _portraitModeActive = false;
 
   bool _isInitialized = false;
 
@@ -115,7 +125,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
     _cameraController = CameraController(
       camera,
-      ResolutionPreset.ultraHigh, // Pro 4K/2K Quality
+      ResolutionPreset.high, // Optimized: 1080p for performance & clarity
       enableAudio: true,
       imageFormatGroup: ImageFormatGroup.nv21,
     );
@@ -198,6 +208,21 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
           _updateAutoFraming(pose);
         });
 
+        if (result.isMatched && !_matchResult.isMatched) {
+           HapticFeedback.mediumImpact(); // Confirm first match
+        }
+
+        // 1. Gesture detection
+        if (_gestureController.checkGesture(pose)) {
+          _autoCaptureController?.manualCapture();
+          _voiceService.speak('Awesome gesture! Snapping now.');
+        }
+
+        // 2. Voice feedback for posture
+        if (result.feedback.isNotEmpty && !result.isMatched) {
+          _voiceService.speak(result.feedback.first);
+        }
+
         // Update auto-capture with score
         _autoCaptureController?.updateScore(result.score);
       } else {
@@ -263,63 +288,77 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
     final mode = _cameraModes[_selectedModeIndex];
 
-    if (mode == 'Photo Booth') {
-      _photoBoothImages.add(path);
-      
-      if (_photoBoothImages.length < 4) {
-         // Cycle to next template for variety
-         int nextIndex = (_allTemplates.indexOf(_selectedTemplate!) + 1) % _allTemplates.length;
-         setState(() {
-           _selectedTemplate = _allTemplates[nextIndex];
-           _matchResult = PoseMatchResult.empty;
-         });
-         _autoCaptureController?.reset();
-         return; // Don't navigate yet!
-      } else {
-         // We have 4 images, push to CollagePreview!
-         _cameraController?.stopImageStream().then((_) {
-            if (mounted) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => CollagePreviewScreen(imagePaths: _photoBoothImages),
-                )
-              ).then((_) {
-                 _photoBoothImages.clear();
-                 _showGhostPose = true;
-                 _autoCaptureController?.reset();
-                 if (_cameraController != null && _cameraController!.value.isInitialized) {
-                     _cameraController!.startImageStream(_processFrame).catchError((e){});
-                 }
-              });
-            }
-         });
-         return;
-      }
-    }
+    // Process photo with Pro features (Watermark, Blur)
+    _processPhotoWithProFeatures(path, mode).then((processedPath) {
+      if (!mounted) return;
 
-    // Stop image stream before navigating to standard preview
-    _cameraController?.stopImageStream().then((_) {
-      if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PreviewScreen(
-              imagePath: path,
-              templateId: _selectedTemplate?.id ?? 'custom',
-              templateName: _selectedTemplate?.name ?? 'Standard Photo',
-              matchScore: mode == 'Poses' ? _matchResult.score : 100.0,
-              isFrontCamera: _currentCameraIndex == 1,
-            ),
-          ),
-        ).then((_) {
-           // Resume camera stream when returning
-           _showGhostPose = true; // reset ghost
-           _autoCaptureController?.reset();
-           if (_cameraController != null && _cameraController!.value.isInitialized) {
-               _cameraController!.startImageStream(_processFrame).catchError((e){});
-           }
+      if (mode == 'Photo Booth') {
+        _photoBoothImages.add(processedPath);
+        
+        if (_photoBoothImages.length < 4) {
+           // Cycle to next template for variety
+           int nextIndex = (_allTemplates.indexOf(_selectedTemplate!) + 1) % _allTemplates.length;
+           setState(() {
+             _selectedTemplate = _allTemplates[nextIndex];
+             _autoCaptureController?.reset(); // Allow next capture
+           });
+           _voiceService.speak('Next pose in 3 seconds!');
+        } else {
+           // All 4 captured! Show collage
+           Navigator.push(context, MaterialPageRoute(builder: (_) => CollagePreviewScreen(imagePaths: _photoBoothImages)));
+           _photoBoothImages.clear();
+        }
+      } else {
+        // Standard single photo
+        // Stop stream before navigating to preview
+        _cameraController?.stopImageStream().then((_) {
+          if (mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PreviewScreen(
+                  imagePath: processedPath,
+                  templateId: _selectedTemplate?.id ?? 'custom',
+                  templateName: _selectedTemplate?.name ?? 'Standard Photo',
+                  matchScore: mode == 'Poses' ? _matchResult.score : 100.0,
+                  isFrontCamera: _currentCameraIndex == 1,
+                ),
+              ),
+            ).then((_) {
+               // Resume camera stream when returning
+               _showGhostPose = true; 
+               _autoCaptureController?.reset();
+               if (_cameraController != null && _cameraController!.value.isInitialized) {
+                   _cameraController!.startImageStream(_processFrame).catchError((e){});
+               }
+            });
+          }
+        });
+
+        Gal.putImage(processedPath).then((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('AuraPose AI photo saved to Gallery!')),
+            );
+          }
         });
       }
     });
+  }
+
+  Future<String> _processPhotoWithProFeatures(String path, String mode) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      Uint8List processedBytes = bytes;
+
+      // Apply Cinematic Watermark
+      processedBytes = await WatermarkService.applyCinematicWatermark(processedBytes, "iQOO Z6 Lite 5G");
+
+      final file = File(path);
+      await file.writeAsBytes(processedBytes);
+    } catch (e) {
+      debugPrint('Error processing pro features: $e');
+    }
+    return path;
   }
 
   void _switchCamera() async {
@@ -366,6 +405,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
       if (mode != 'Photo Booth') {
         _photoBoothImages.clear();
       }
+      HapticFeedback.selectionClick();
     });
   }
 
@@ -411,11 +451,19 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
     }
   }
 
-  Future<void> _openGallery() async {
-    Navigator.push(
-       context,
-       MaterialPageRoute(builder: (_) => MiniGalleryScreen()),
-    );
+  void _openGallery() {
+    if (Theme.of(context).platform == TargetPlatform.android) {
+      const intent = AndroidIntent(
+        action: 'action_view',
+        type: 'image/*',
+        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
+      );
+      intent.launch();
+    } else {
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Opening Gallery...')),
+       );
+    }
   }
 
   Future<void> _setExposure(double value) async {
@@ -435,6 +483,12 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    
+    if (state == AppLifecycleState.inactive) {
+      _cameraController?.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      _setupCamera(_cameras[_currentCameraIndex]);
     }
   }
 
@@ -451,6 +505,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
       _currentZoomLevel = value;
       _digitalZoomScale = digitalScale;
     });
+    HapticFeedback.selectionClick();
 
     try {
       await _cameraController!.setZoomLevel(hardwareZoom);
@@ -466,6 +521,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
     _cameraController?.dispose();
     _poseDetectorService.dispose();
     _autoCaptureController?.dispose();
+    _voiceService.stop();
     super.dispose();
   }
 
@@ -538,7 +594,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
               if (zoomLevel < _minZoomLevel) zoomLevel = _minZoomLevel;
               if (zoomLevel > 100.0) zoomLevel = 100.0;
               
-              if (zoomLevel != _currentZoomLevel) {
+              if ((zoomLevel - _currentZoomLevel).abs() > 0.05) {
                  _setZoom(zoomLevel);
               }
             },
@@ -579,7 +635,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                   ..scale(_framingScale * _digitalZoomScale),
                 alignment: Alignment.center,
                 child: Center(
-                  child: CameraPreview(_cameraController!),
+                  child: RepaintBoundary(child: CameraPreview(_cameraController!)),
                 ),
               ),
             ),
@@ -597,10 +653,27 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Settings Button
-                      _ProIconButton(
-                        icon: Icons.settings, 
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProSettingsScreen())),
+                      // Left Side: Settings & Receive
+                      Row(
+                        children: [
+                          _ProIconButton(
+                            icon: Icons.settings, 
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProSettingsScreen())),
+                          ),
+                          const SizedBox(width: 10),
+                          GestureDetector(
+                            onTap: _openReceiveScreen,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black38,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white12, width: 1),
+                              ),
+                              child: const Icon(Icons.qr_code_scanner, color: AppColors.accentCyan, size: 18),
+                            ),
+                          ),
+                        ],
                       ),
 
                       // AI Cameraman Toggle (Refined Pill)
@@ -643,9 +716,20 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                         ),
                       ),
 
-                      // Right Group: Flash & Flip
+                      // Right Group: Voice, Flash & Flip
                       Row(
                         children: [
+                          _ProIconButton(
+                            icon: _voiceEnabled ? Icons.volume_up : Icons.volume_off,
+                            onTap: () {
+                              setState(() {
+                                _voiceEnabled = !_voiceEnabled;
+                                _voiceService.toggle(_voiceEnabled);
+                              });
+                            },
+                            isActive: _voiceEnabled,
+                          ),
+                          const SizedBox(width: 12),
                           _ProIconButton(
                             icon: _getFlashIcon(),
                             onTap: _toggleFlash,
@@ -715,20 +799,22 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                           : Colors.white.withOpacity(0.2),
                     ),
                   ),
-                  child: Icon(
-                    Icons.visibility,
-                    color: _showGhostPose ? AppColors.accentCyan : Colors.white54,
-                    size: 22,
+                  child: RepaintBoundary(
+                    child: Icon(
+                      Icons.visibility,
+                      color: _showGhostPose ? AppColors.accentCyan : Colors.white54,
+                      size: 22,
+                    ),
                   ),
                 ),
               ),
             ),
 
-            // Feedback Overlay just above slider
+            // Feedback Overlay (Moved Higher)
             Positioned(
-              bottom: 210, // Above slider and capture button
-              left: 20,
-              right: 20,
+              bottom: 340, // Much higher to clear zoom controls and emojis
+              left: 30,
+              right: 30,
               child: FeedbackOverlay(
                 feedback: _matchResult.feedback,
                 scoreLabel: _matchResult.scoreLabel,
@@ -736,10 +822,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             ),
           ],
 
-          // ── Pro Zoom Controller (Premium Super Zoom Selection) ──
+          // ── Pro Zoom Controller (Elevated Layer) ──
           if (!_isCleanView)
             Positioned(
-              bottom: 200,
+              bottom: 240, // Elevated above pose selector
               left: 0,
               right: 0,
               child: Column(
@@ -888,35 +974,39 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
               ),
             ),
 
-          // ── AI Dynamic Stats ──
+          // ── AI Dynamic Stats (Integrated Status) ──
           if (!_isCleanView)
           Positioned(
-            top: MediaQuery.of(context).padding.top + 50,
+            top: MediaQuery.of(context).padding.top + 70,
             left: 0,
             right: 0,
             child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black38,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.auto_awesome, color: Colors.white, size: 14),
-                    const SizedBox(width: 8),
-                    Text(
-                      _isZoomDragging ? "CALIBRATING OPTICS..." : "AI ANALYZING POSE...",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
+              child: AnimatedOpacity(
+                opacity: (isPoseMode && _selectedTemplate != null) ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 300),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.auto_awesome, color: AppColors.accentCyan, size: 12),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isZoomDragging ? "CALIBRATING OPTICS" : "AI ANALYZING POSE",
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.0,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

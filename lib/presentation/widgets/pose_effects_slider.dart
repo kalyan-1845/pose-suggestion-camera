@@ -38,8 +38,8 @@ class PoseEffectsSlider extends StatelessWidget {
                 children: [
                   // Effect Circle
                   Container(
-                    width: isSelected ? 72 : 60,
-                    height: isSelected ? 72 : 60,
+                    width: isSelected ? 64 : 54,
+                    height: isSelected ? 64 : 54,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(

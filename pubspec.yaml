@@ -30,6 +30,8 @@ dependencies:
   google_mlkit_selfie_segmentation: ^0.10.1
   gal: ^2.3.2
   android_intent_plus: ^5.0.2
+  flutter_tts: ^4.2.5
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:

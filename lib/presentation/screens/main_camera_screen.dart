@@ -21,7 +21,10 @@ import 'collage_preview_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'mini_gallery_screen.dart';
 import 'pro_settings_screen.dart';
+import 'wifi_share_screen.dart';
 import 'package:gal/gal.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 
 /// Main camera screen mimicking standard OS camera with a "Poses" mode
 class MainCameraScreen extends StatefulWidget {
@@ -58,8 +61,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
   double _maxZoomLevel = 1.0;
   double _currentZoomLevel = 1.0;
   double _baseZoomLevel = 1.0;
+  double _digitalZoomScale = 1.0; // For Super Zoom beyond hardware limits
 
-  // New Pro UI State
+  // Pro UI State
+  bool _isCleanView = false;
   Offset? _focusPoint;
   double _exposureValue = 0.0;
   double _minExposure = 0.0;
@@ -110,8 +115,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
     _cameraController = CameraController(
       camera,
-      ResolutionPreset.max, // Flagship Ultra Clarity
-      enableAudio: true, // Needed for video
+      ResolutionPreset.ultraHigh, // Pro 4K/2K Quality
+      enableAudio: true,
       imageFormatGroup: ImageFormatGroup.nv21,
     );
 
@@ -325,6 +330,24 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
     await _setupCamera(_cameras[_currentCameraIndex]);
   }
 
+  void _openReceiveScreen() {
+    _cameraController?.stopImageStream().then((_) {
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => WifiShareScreen()),
+        ).then((_) {
+          if (_cameraController != null && _cameraController!.value.isInitialized) {
+            _cameraController!.startImageStream(_processFrame).catchError((e) {});
+          }
+        });
+      }
+    });
+  }
+
+  void _toggleCleanView() {
+    setState(() => _isCleanView = !_isCleanView);
+  }
+
   void _toggleGhostPose() {
     setState(() => _showGhostPose = !_showGhostPose);
   }
@@ -412,12 +435,27 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive) {
-      _cameraController?.dispose();
-    } else if (state == AppLifecycleState.resumed) {
-      if (_cameraController != null) {
-        _setupCamera(_cameras[_currentCameraIndex]);
-      }
+    }
+  }
+
+  Future<void> _setZoom(double value) async {
+    if (_cameraController == null) return;
+    
+    // Clamp to hardware limits for the controller
+    final hardwareZoom = value.clamp(_minZoomLevel, _maxZoomLevel);
+    
+    // Calculate digital scale for "Super Zoom"
+    final digitalScale = value > _maxZoomLevel ? (value / _maxZoomLevel) : 1.0;
+
+    setState(() {
+      _currentZoomLevel = value;
+      _digitalZoomScale = digitalScale;
+    });
+
+    try {
+      await _cameraController!.setZoomLevel(hardwareZoom);
+    } catch (e) {
+      debugPrint('Zoom error: $e');
     }
   }
 
@@ -429,6 +467,44 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
     _poseDetectorService.dispose();
     _autoCaptureController?.dispose();
     super.dispose();
+  }
+
+  FlashMode _flashMode = FlashMode.off;
+
+  Future<void> _toggleFlash() async {
+    if (_cameraController == null) return;
+    
+    FlashMode nextMode;
+    switch (_flashMode) {
+      case FlashMode.off:
+        nextMode = FlashMode.always;
+        break;
+      case FlashMode.always:
+        nextMode = FlashMode.auto;
+        break;
+      case FlashMode.auto:
+        nextMode = FlashMode.torch;
+        break;
+      case FlashMode.torch:
+        nextMode = FlashMode.off;
+        break;
+    }
+    
+    try {
+      await _cameraController!.setFlashMode(nextMode);
+      setState(() => _flashMode = nextMode);
+    } catch (e) {
+      debugPrint('Flash error: $e');
+    }
+  }
+
+  IconData _getFlashIcon() {
+    switch (_flashMode) {
+      case FlashMode.off: return Icons.flash_off;
+      case FlashMode.always: return Icons.flash_on;
+      case FlashMode.auto: return Icons.flash_auto;
+      case FlashMode.torch: return Icons.flashlight_on;
+    }
   }
 
   @override
@@ -460,11 +536,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
               if (_cameraController == null) return;
               double zoomLevel = _baseZoomLevel * details.scale;
               if (zoomLevel < _minZoomLevel) zoomLevel = _minZoomLevel;
-              if (zoomLevel > _maxZoomLevel) zoomLevel = _maxZoomLevel;
+              if (zoomLevel > 100.0) zoomLevel = 100.0;
               
               if (zoomLevel != _currentZoomLevel) {
-                 _currentZoomLevel = zoomLevel;
-                 await _cameraController!.setZoomLevel(_currentZoomLevel);
+                 _setZoom(zoomLevel);
               }
             },
             onTapDown: (details) async {
@@ -501,7 +576,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                 curve: Curves.easeOut,
                 transform: Matrix4.identity()
                   ..translate(_framingOffset.dx, _framingOffset.dy)
-                  ..scale(_framingScale),
+                  ..scale(_framingScale * _digitalZoomScale),
                 alignment: Alignment.center,
                 child: Center(
                   child: CameraPreview(_cameraController!),
@@ -510,8 +585,98 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             ),
           ),
 
+          // ── Top Action Bar (Flagship Style) ──
+          if (!_isCleanView)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Settings Button
+                      _ProIconButton(
+                        icon: Icons.settings, 
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProSettingsScreen())),
+                      ),
+
+                      // AI Cameraman Toggle (Refined Pill)
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _autoFramingEnabled = !_autoFramingEnabled;
+                            if (!_autoFramingEnabled) {
+                              _framingScale = 1.0;
+                              _framingOffset = Offset.zero;
+                            }
+                          });
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _autoFramingEnabled ? AppColors.accentCyan.withOpacity(0.9) : Colors.black38,
+                            borderRadius: BorderRadius.circular(25),
+                            border: Border.all(
+                              color: _autoFramingEnabled ? AppColors.accentCyan : Colors.white24,
+                              width: 1.5,
+                            ),
+                            boxShadow: _autoFramingEnabled ? [BoxShadow(color: AppColors.accentCyan.withOpacity(0.4), blurRadius: 12)] : null,
+                          ),
+                          child: RawRow(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.face_retouching_natural, 
+                                   color: _autoFramingEnabled ? Colors.black : Colors.white, size: 18),
+                              const SizedBox(width: 8),
+                              Text('AI CAMERAMAN', style: TextStyle(
+                                color: _autoFramingEnabled ? Colors.black : Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.2,
+                              )),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Right Group: Flash & Flip
+                      Row(
+                        children: [
+                          _ProIconButton(
+                            icon: _getFlashIcon(),
+                            onTap: _toggleFlash,
+                            isActive: _flashMode != FlashMode.off,
+                          ),
+                          const SizedBox(width: 12),
+                          _ProIconButton(
+                            icon: Icons.cameraswitch,
+                            onTap: _switchCamera,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Clean View Exit Button (Small corner hint) ──
+          if (_isCleanView)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 16,
+              child: IconButton(
+                onPressed: _toggleCleanView,
+                icon: const Icon(Icons.visibility_off, color: Colors.white38, size: 20),
+              ),
+            ),
+
           // ── Pose Mode Specific Overlays ──
-          if (isPoseMode && _selectedTemplate != null) ...[
+          if (isPoseMode && _selectedTemplate != null && !_isCleanView) ...[
             // Ghost Pose Outline
             if (_showGhostPose)
               Positioned.fill(
@@ -571,67 +736,108 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             ),
           ],
 
-          // ── Pro Zoom Controller (One-hand dial) ──
-          Positioned(
-            bottom: 180,
-            left: 0,
-            right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Quick Selectors
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _ZoomQuickBtn(label: '0.5x', value: 0.5, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, 
-                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
-                    const SizedBox(width: 12),
-                    _ZoomQuickBtn(label: '1x', value: 1.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel,
-                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
-                    const SizedBox(width: 12),
-                    _ZoomQuickBtn(label: '2x', value: 2.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel,
-                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
-                    const SizedBox(width: 12),
-                    _ZoomQuickBtn(label: '5x', value: 5.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel,
-                        onTap: (v) => _cameraController?.setZoomLevel(v.clamp(_minZoomLevel, _maxZoomLevel))),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Smooth Drag Dial
-                SizedBox(
-                  width: 250,
-                  height: 40,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 1,
-                      activeTrackColor: Colors.white38,
-                      inactiveTrackColor: Colors.white12,
-                      thumbColor: Colors.white,
-                      overlayColor: Colors.white.withOpacity(0.1),
-                    ),
-                    child: Slider(
-                      value: _currentZoomLevel,
-                      min: _minZoomLevel,
-                      max: _maxZoomLevel,
-                      onChangeStart: (_) => setState(() => _isZoomDragging = true),
-                      onChangeEnd: (_) {
-                        setState(() => _isZoomDragging = false);
-                        // Smart Focus: Trigger refocus after zoom to ensure maximum clarity
-                        _cameraController?.setFocusMode(FocusMode.auto);
-                      },
-                      onChanged: (v) {
-                         setState(() => _currentZoomLevel = v);
-                         _cameraController?.setZoomLevel(v);
-                      },
+          // ── Pro Zoom Controller (Premium Super Zoom Selection) ──
+          if (!_isCleanView)
+            Positioned(
+              bottom: 200,
+              left: 0,
+              right: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Horizontal Scrolling Zoom Buttons
+                  SizedBox(
+                    height: 40,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: [
+                        _ZoomQuickBtn(label: '0.6x', value: 0.6, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '1x', value: 1.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '2x', value: 2.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '4x', value: 4.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '5x', value: 5.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '8x', value: 8.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '10x', value: 10.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '15x', value: 15.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '20x', value: 20.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '30x', value: 30.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '45x', value: 45.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '75x', value: 75.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        _ZoomQuickBtn(label: '100x', value: 100.0, current: _currentZoomLevel, min: _minZoomLevel, max: 100.0, onTap: _setZoom),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  // Professional Zoom Ticks (Interactive)
+                  GestureDetector(
+                    onPanUpdate: (details) {
+                      final box = context.findRenderObject() as RenderBox;
+                      final localOffset = box.globalToLocal(details.globalPosition);
+                      // Assuming the ticks container is roughly 250 width centered
+                      // Need to calculate which part of the 250 width is being touched
+                      final screenWidth = MediaQuery.of(context).size.width;
+                      final startX = (screenWidth - 250) / 2;
+                      final relativeX = (localOffset.dx - startX).clamp(0.0, 250.0);
+                      final progress = relativeX / 250.0;
+                      
+                      // Map 0..1 progress to minZoom..100x
+                      final targetZoom = _minZoomLevel + (progress * (100.0 - _minZoomLevel));
+                      _setZoom(targetZoom);
+                    },
+                    onTapUp: (details) {
+                      final box = context.findRenderObject() as RenderBox;
+                      final localOffset = box.globalToLocal(details.globalPosition);
+                      final screenWidth = MediaQuery.of(context).size.width;
+                      final startX = (screenWidth - 250) / 2;
+                      final relativeX = (localOffset.dx - startX).clamp(0.0, 250.0);
+                      final progress = relativeX / 250.0;
+                      
+                      final targetZoom = _minZoomLevel + (progress * (100.0 - _minZoomLevel));
+                      _setZoom(targetZoom);
+                    },
+                    child: Container(
+                      height: 20, // Increased hit area
+                      width: 250,
+                      color: Colors.transparent, // Invisible hit area
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(21, (i) => Container(
+                          width: 1.5,
+                          height: i % 5 == 0 ? 10 : 5,
+                          color: Colors.white30,
+                        )),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Responsive Dial
+                  SizedBox(
+                    width: 250,
+                    height: 40,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2,
+                        activeTrackColor: Colors.yellow,
+                        inactiveTrackColor: Colors.white12,
+                        thumbColor: Colors.yellow,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                        overlayColor: Colors.yellow.withOpacity(0.1),
+                      ),
+                      child: Slider(
+                        value: _currentZoomLevel.clamp(_minZoomLevel, 100.0),
+                        min: _minZoomLevel,
+                        max: 100.0, // Support up to 100x in UI
+                        onChanged: _setZoom,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
           // ── Pro Focus & Exposure UI ──
-          if (_showFocusUI && _focusPoint != null)
+          if (_showFocusUI && _focusPoint != null && !_isCleanView)
             Positioned(
               left: _focusPoint!.dx - 40,
               top: _focusPoint!.dy - 60,
@@ -683,6 +889,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             ),
 
           // ── AI Dynamic Stats ──
+          if (!_isCleanView)
           Positioned(
             top: MediaQuery.of(context).padding.top + 50,
             left: 0,
@@ -715,81 +922,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             ),
           ),
 
-          // ── Top Action Bar ──
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 16,
-                right: 16,
-                bottom: 12,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () {
-                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ProSettingsScreen()));
-                        },
-                        icon: const Icon(Icons.settings, color: Colors.white, size: 24),
-                      ),
-                      // Invisible Cameraman Toggle
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _autoFramingEnabled = !_autoFramingEnabled;
-                            if (!_autoFramingEnabled) {
-                               _framingScale = 1.0;
-                               _framingOffset = Offset.zero;
-                            }
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _autoFramingEnabled ? AppColors.accentCyan.withOpacity(0.3) : Colors.black45,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: _autoFramingEnabled ? AppColors.accentCyan : Colors.white24,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.face_retouching_natural, 
-                                   color: _autoFramingEnabled ? AppColors.accentCyan : Colors.white, size: 18),
-                              const SizedBox(width: 6),
-                              Text('AI Cameraman', style: TextStyle(
-                                color: _autoFramingEnabled ? AppColors.accentCyan : Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              )),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () {}, // Flash toggle could go here
-                        icon: const Icon(Icons.flash_off, color: Colors.white, size: 24),
-                      ),
-                      IconButton(
-                        onPressed: _switchCamera,
-                        icon: const Icon(Icons.cameraswitch, color: Colors.white, size: 24),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // DELETED duplicate Top Bar
 
           // ── Bottom UI (Modes, Slider, Capture Button) ──
           Positioned(
@@ -915,16 +1048,31 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
                   const SizedBox(height: 24),
 
-                  // Video Timer if Recording
+                  // Video Timer if Recording (Premium Pulsing View)
                   if (_isRecordingVideo)
-                    Container(
-                       margin: const EdgeInsets.only(bottom: 12),
-                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                       decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(16)),
-                       child: Text(
-                          '${(_videoRecordSeconds ~/ 60).toString().padLeft(2, '0')}:${(_videoRecordSeconds % 60).toString().padLeft(2, '0')}',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                       ),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 1.0, end: 0.5),
+                      duration: const Duration(seconds: 1),
+                      builder: (context, value, child) => Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(value),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.radio_button_checked, color: Colors.white, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${(_videoRecordSeconds ~/ 60).toString().padLeft(2, '0')}:${(_videoRecordSeconds % 60).toString().padLeft(2, '0')}',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
 
                   // Text Mode Selector
@@ -1006,8 +1154,8 @@ class _ZoomQuickBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // If this specific value isn't supported by hardware, don't show or disable
-    if (value < min && value != 0.5) return const SizedBox.shrink(); 
-    if (value > max) return const SizedBox.shrink();
+    if (value < min && value != 0.5 && value != 0.6) return const SizedBox.shrink(); 
+    if (value > max && value > 8.0) return const SizedBox.shrink(); // Allow up to 100x but maybe hide others if too much
 
     final isSelected = (current - value).abs() < 0.1;
 
@@ -1015,21 +1163,67 @@ class _ZoomQuickBtn extends StatelessWidget {
       onTap: () => onTap(value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.yellow.withOpacity(0.9) : Colors.black45,
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: isSelected ? Colors.yellow : Colors.white24, width: 1),
+          color: isSelected ? Colors.yellow : Colors.black45,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? Colors.yellow : Colors.white12, width: 1),
+          boxShadow: isSelected ? [BoxShadow(color: Colors.yellow.withOpacity(0.3), blurRadius: 8)] : null,
         ),
         child: Text(
           label,
           style: TextStyle(
             color: isSelected ? Colors.black : Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ProIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isActive;
+
+  const _ProIconButton({
+    required this.icon,
+    required this.onTap,
+    this.isActive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.accentCyan.withOpacity(0.2) : Colors.black38,
+          shape: BoxShape.circle,
+          border: Border.all(color: isActive ? AppColors.accentCyan : Colors.white12, width: 1),
+        ),
+        child: Icon(icon, color: isActive ? AppColors.accentCyan : Colors.white, size: 20),
+      ),
+    );
+  }
+}
+
+/// A simpler helper for Row inside Container to avoid issues with constraints
+class RawRow extends StatelessWidget {
+  final List<Widget> children;
+  final MainAxisSize mainAxisSize;
+  
+  const RawRow({super.key, required this.children, this.mainAxisSize = MainAxisSize.min});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: mainAxisSize,
+      children: children,
     );
   }
 }

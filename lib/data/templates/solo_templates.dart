@@ -27,6 +27,11 @@ class SoloTemplates {
     _powerStance,
     _casualLean,
     _theAura,
+    _genZSelfie,
+    _softGaze,
+    _urbanStrut,
+    _windowLean,
+    _creativeSilhouette,
   ];
 
   // ── 1. Victory / Peace Sign ──
@@ -763,5 +768,34 @@ class SoloTemplates {
       'leftHip': 175.0, 'rightHip': 175.0,
       'leftKnee': 178.0, 'rightKnee': 178.0,
     },
+  );
+  static const _genZSelfie = PoseTemplate(
+    id: 'solo_21', name: 'Gen-Z 0.5x Selfie', category: 'solo', personCount: 1, difficulty: 'easy', placeTags: ['any'], instruction: 'Hold phone high and tilt down, look up at camera!', emoji: '',
+    keypoints: [{'x': 0.5, 'y': 0.1}, {'x': 0.45, 'y': 0.08}, {'x': 0.55, 'y': 0.08}, {'x': 0.35, 'y': 0.3}, {'x': 0.65, 'y': 0.3}],
+    keyAngles: {'leftShoulder': 160.0, 'rightShoulder': 160.0},
+  );
+
+  static const _softGaze = PoseTemplate(
+    id: 'solo_22', name: 'Soft Gaze Portrait', category: 'solo', personCount: 1, difficulty: 'easy', placeTags: ['indoor', 'studio'], instruction: 'Slight head tilt, soft smile, look slightly away.', emoji: '',
+    keypoints: [{'x': 0.5, 'y': 0.15}, {'x': 0.48, 'y': 0.12}, {'x': 0.52, 'y': 0.12}, {'x': 0.4, 'y': 0.4}],
+    keyAngles: {'leftShoulder': 20.0, 'rightShoulder': 20.0},
+  );
+
+  static const _urbanStrut = PoseTemplate(
+    id: 'solo_23', name: 'Urban Strut', category: 'solo', personCount: 1, difficulty: 'medium', placeTags: ['urban', 'street'], instruction: 'One leg forward, mid-stride, look straight ahead.', emoji: '',
+    keypoints: [{'x': 0.5, 'y': 0.1}, {'x': 0.45, 'y': 0.25}, {'x': 0.55, 'y': 0.25}, {'x': 0.48, 'y': 0.8}, {'x': 0.55, 'y': 0.9}],
+    keyAngles: {'leftHip': 160.0, 'rightHip': 140.0, 'leftKnee': 170.0, 'rightKnee': 130.0},
+  );
+
+  static const _windowLean = PoseTemplate(
+    id: 'solo_24', name: 'Window Side Lean', category: 'solo', personCount: 1, difficulty: 'easy', placeTags: ['indoor'], instruction: 'Lean your side against a wall, arm crossed.', emoji: '',
+    keypoints: [{'x': 0.5, 'y': 0.1}, {'x': 0.4, 'y': 0.25}, {'x': 0.4, 'y': 0.5}, {'x': 0.5, 'y': 0.8}],
+    keyAngles: {'leftElbow': 90.0, 'leftShoulder': 20.0},
+  );
+
+  static const _creativeSilhouette = PoseTemplate(
+    id: 'solo_25', name: 'Creative Silhouette', category: 'solo', personCount: 1, difficulty: 'hard', placeTags: ['sunset', 'shadow'], instruction: 'Reach for the stars, dramatic arm placement.', emoji: '',
+    keypoints: [{'x': 0.5, 'y': 0.1}, {'x': 0.4, 'y': 0.2}, {'x': 0.2, 'y': 0.05}, {'x': 0.5, 'y': 0.8}],
+    keyAngles: {'leftShoulder': 175.0, 'leftElbow': 170.0},
   );
 }

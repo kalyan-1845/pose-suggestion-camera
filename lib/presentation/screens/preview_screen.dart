@@ -5,8 +5,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'wifi_share_screen.dart';
-import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 import 'package:gal/gal.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/constants/app_colors.dart';
 
 /// Preview screen for captured photo with save/share/retake options
@@ -49,6 +49,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
       final savedPath = '${directory.path}/$fileName';
 
       await File(_currentImagePath).copy(savedPath);
+
+      // Request permissions for Android 13+ and older
+      if (Platform.isAndroid) {
+        final status = await Permission.storage.status;
+        if (!status.isGranted) {
+          await Permission.storage.request();
+        }
+        // For Android 13+ (API 33+)
+        await Permission.photos.request();
+      }
 
       // Save natively to System Gallery using Gal package
       await Gal.putImage(_currentImagePath);
@@ -105,11 +115,22 @@ class _PreviewScreenState extends State<PreviewScreen> {
           File(_currentImagePath),
           callbacks: ProImageEditorCallbacks(
             onImageEditingComplete: (bytes) async {
-              final newPath = '\${(await getTemporaryDirectory()).path}/edited_\${DateTime.now().millisecondsSinceEpoch}.jpg';
+              final newPath = '${(await getTemporaryDirectory()).path}/edited_${DateTime.now().millisecondsSinceEpoch}.jpg';
               final file = await File(newPath).writeAsBytes(bytes);
+              
+              // AUTO-SAVE to gallery immediately for "Pro" experience
+              await Gal.putImage(file.path);
+
               setState(() {
                  _currentImagePath = file.path;
+                 _isSaved = true;
               });
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Edits saved to gallery!'))
+                );
+              }
               Navigator.pop(context);
             },
           ),

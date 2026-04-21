@@ -62,12 +62,21 @@ class PoseEffectsSlider extends StatelessWidget {
                         child: Container(
                           color: Colors.black.withOpacity(isSelected ? 0.6 : 0.3),
                           child: Center(
-                            child: Text(
-                              template.emoji,
-                              style: TextStyle(
-                                fontSize: isSelected ? 32 : 24,
-                              ),
-                            ),
+                            child: template.emoji.isEmpty 
+                              ? Text(
+                                  (templates.indexOf(template) + 1).toString(),
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : AppColors.accentCyan,
+                                    fontSize: isSelected ? 22 : 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : Text(
+                                  template.emoji,
+                                  style: TextStyle(
+                                    fontSize: isSelected ? 32 : 24,
+                                  ),
+                                ),
                           ),
                         ),
                       ),

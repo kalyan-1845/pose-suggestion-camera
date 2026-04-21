@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:ui' as ui;
 import 'package:gal/gal.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/constants/app_colors.dart';
 
@@ -33,6 +34,13 @@ class _CollagePreviewScreenState extends State<CollagePreviewScreen> {
       final savedPath = '${directory.path}/$fileName';
 
       await File(savedPath).writeAsBytes(pngBytes);
+      
+      // Request permissions for Android 13+ and older
+      if (Platform.isAndroid) {
+        await Permission.storage.request();
+        await Permission.photos.request();
+      }
+
       await Gal.putImage(savedPath); // Save natively
 
       if (mounted) {

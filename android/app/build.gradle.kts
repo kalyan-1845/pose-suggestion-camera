@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.poseai.pose_suggestion_camera"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.1.12297006"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

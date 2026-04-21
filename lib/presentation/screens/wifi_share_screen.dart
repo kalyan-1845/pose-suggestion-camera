@@ -7,6 +7,8 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import '../../core/constants/app_colors.dart';
 
 class WifiShareScreen extends StatefulWidget {
@@ -138,6 +140,17 @@ class _WifiShareScreenState extends State<WifiShareScreen> {
           
           if (mounted) {
              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Image received successfully!")));
+             
+             // Flagship Experience: Auto-Open the shared photo!
+             final String path = file.path;
+             final intent = AndroidIntent(
+               action: 'action_view',
+               data: 'file://$path',
+               type: 'image/jpeg',
+               flags: [Flag.FLAG_ACTIVITY_NEW_TASK, Flag.FLAG_GRANT_READ_URI_PERMISSION],
+             );
+             intent.launch().catchError((e) => debugPrint("Intent error: $e"));
+
              Navigator.of(context).pop();
           }
        } else {

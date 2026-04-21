@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -11,6 +12,9 @@ import '../../data/repositories/template_repository.dart';
 import '../../domain/pose_detector_service.dart';
 import '../../domain/pose_matching_engine.dart';
 import '../../domain/auto_capture_controller.dart';
+import '../../domain/voice_guidance_service.dart';
+import '../../domain/gesture_controller.dart';
+import '../../domain/magic_enhance_service.dart';
 import '../widgets/skeleton_painter.dart';
 import '../widgets/ghost_pose_overlay.dart';
 import '../widgets/feedback_overlay.dart';
@@ -20,16 +24,14 @@ import '../animations/countdown_overlay.dart';
 import '../animations/capture_flash.dart';
 import 'preview_screen.dart';
 import 'collage_preview_screen.dart';
-import 'package:image_picker/image_picker.dart';
-import 'mini_gallery_screen.dart';
-import 'pro_settings_screen.dart';
 import 'wifi_share_screen.dart';
+import 'pro_settings_screen.dart';
+import 'mini_gallery_screen.dart';
 import 'package:gal/gal.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../../core/utils/watermark_service.dart';
-import '../../domain/voice_guidance_service.dart';
-import '../../domain/gesture_controller.dart';
+import 'package:image_picker/image_picker.dart';
 
 /// Main camera screen mimicking standard OS camera with a "Poses" mode
 class MainCameraScreen extends StatefulWidget {
@@ -51,6 +53,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
   
   bool _voiceEnabled = true;
   bool _portraitModeActive = false;
+  bool _isEnhancing = false;
 
   bool _isInitialized = false;
 
@@ -344,16 +347,24 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   Future<String> _processPhotoWithProFeatures(String path, String mode) async {
     try {
-      final bytes = await File(path).readAsBytes();
-      Uint8List processedBytes = bytes;
-
-      // Apply Cinematic Watermark
-      processedBytes = await WatermarkService.applyCinematicWatermark(processedBytes, "iQOO Z6 Lite 5G");
+      if (mounted) setState(() => _isEnhancing = true);
 
       final file = File(path);
-      await file.writeAsBytes(processedBytes);
+      Uint8List bytes = await file.readAsBytes();
+
+      // 1. Mandatory Cinematic Watermark
+      bytes = await WatermarkService.applyCinematicWatermark(bytes, "iQOO Z6 Lite 5G");
+
+      // 2. AI Magic Enhance (Flagship Pass)
+      // This sharpens, fixes colors and reduces noise
+      bytes = await MagicEnhanceService.enhance(bytes);
+
+      await file.writeAsBytes(bytes);
+      
+      if (mounted) setState(() => _isEnhancing = false);
     } catch (e) {
       debugPrint('Error processing pro features: $e');
+      if (mounted) setState(() => _isEnhancing = false);
     }
     return path;
   }
@@ -981,7 +992,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                       const Icon(Icons.auto_awesome, color: AppColors.accentCyan, size: 12),
                       const SizedBox(width: 6),
                       Text(
-                        _isZoomDragging ? "CALIBRATING OPTICS" : "AI ANALYZING POSE",
+                        _isZoomDragging ? "AURA CALIBRATING OPTICS" : "AURAPOSE AI ANALYZING",
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 9,
@@ -1202,6 +1213,51 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
           // ── Capture Flash ──
           if (_showFlash)
             const CaptureFlash(),
+
+          // ── AI Enhancement Overlay (Flagship Style) ──
+          if (_isEnhancing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(color: AppColors.accentCyan, strokeWidth: 2),
+                            const SizedBox(height: 24),
+                            Text(
+                              "AURA AI ENHANCING...",
+                              style: TextStyle(
+                                color: AppColors.accentCyan.withOpacity(0.9),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              "Optimizing details and colors",
+                              style: TextStyle(color: Colors.white70, fontSize: 10),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -8,6 +8,8 @@ import 'wifi_share_screen.dart';
 import 'package:gal/gal.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/constants/app_colors.dart';
+import '../../domain/magic_enhance_service.dart';
+import 'package:image/image.dart' as img;
 
 /// Preview screen for captured photo with save/share/retake options
 class PreviewScreen extends StatefulWidget {
@@ -34,7 +36,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
   double _brightness = 0.0;
   double _contrast = 1.0;
   bool _isSaved = false;
+  bool _isMagicRemoverMode = false;
+  bool _isProcessingRemoval = false;
   late String _currentImagePath;
+  final List<String> _editHistory = []; // For Undo functionality
 
   @override
   void initState() {
@@ -164,10 +169,76 @@ class _PreviewScreenState extends State<PreviewScreen> {
      );
   }
 
-  Future<void> _removeBackground() async {
-      // Mocking the complex custom painter due to time constraints, normally this reads MLKit mask and blends.
-      // We will show a loader and pop a message that it requires full compile to view native layer masks.
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI Background masking generated! (Canvas blending initializing...)')));
+  void _magicRemove() {
+    setState(() {
+      _isMagicRemoverMode = !_isMagicRemoverMode;
+    });
+    
+    if (_isMagicRemoverMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('AI MAGIC REMOVER: Tap an object to erase it.'),
+          duration: Duration(seconds: 4),
+        )
+      );
+    }
+  }
+
+  Future<void> _tapToErase(TapDownDetails details) async {
+    if (!_isMagicRemoverMode || _isProcessingRemoval) return;
+    
+    setState(() => _isProcessingRemoval = true);
+    
+    try {
+      final bytes = await File(_currentImagePath).readAsBytes();
+      
+      // Get logical to local pixel mapping
+      // This is a simplified mapping assuming contain fit
+      final size = MediaQuery.of(context).size;
+      final image = img.decodeImage(bytes);
+      if (image == null) return;
+      
+      final tapX = (details.localPosition.dx / size.width * image.width).toInt();
+      final tapY = (details.localPosition.dy / size.height * image.height).toInt();
+
+      final processedBytes = await MagicEnhanceService.heal(bytes, tapX, tapY);
+      
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/healed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await File(path).writeAsBytes(processedBytes);
+      
+      // Add previous path to history before updating
+      _editHistory.add(_currentImagePath);
+
+      setState(() {
+        _currentImagePath = path;
+        _isProcessingRemoval = false;
+      });
+      
+      // AUTO-SAVE HEALED PHOTO TO GALLERY (Flagship behavior)
+      await Gal.putImage(path);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Object erased and saved to Gallery!'))
+      );
+    } catch (e) {
+      debugPrint('Heal error: $e');
+      setState(() => _isProcessingRemoval = false);
+    }
+  }
+
+  Future<void> _shareAsDocument() async {
+    try {
+      final file = File(_currentImagePath);
+      final xFile = XFile(file.path, mimeType: 'application/octet-stream');
+      
+      await Share.shareXFiles(
+        [xFile],
+        text: 'AuraPose AI HQ Document',
+      );
+    } catch (e) {
+      debugPrint('Doc share error: $e');
+    }
   }
 
   void _goHome() {
@@ -183,26 +254,66 @@ class _PreviewScreenState extends State<PreviewScreen> {
         fit: StackFit.expand,
         children: [
           // ── Photo Preview ──
-          ColorFiltered(
-            colorFilter: ColorFilter.matrix([
-              _contrast, 0, 0, 0, _brightness * 30,
-              0, _contrast, 0, 0, _brightness * 30,
-              0, 0, _contrast, 0, _brightness * 30,
-              0, 0, 0, 1, 0,
-            ]),
-            child: widget.isFrontCamera
-                ? Transform.scale(
-                    scaleX: -1,
-                    child: Image.file(
+          GestureDetector(
+            onTapDown: _tapToErase,
+            child: ColorFiltered(
+              colorFilter: ColorFilter.matrix([
+                _contrast, 0, 0, 0, _brightness * 30,
+                0, _contrast, 0, 0, _brightness * 30,
+                0, 0, _contrast, 0, _brightness * 30,
+                0, 0, 0, 1, 0,
+              ]),
+              child: widget.isFrontCamera
+                  ? Transform.scale(
+                      scaleX: -1,
+                      child: Image.file(
+                        File(_currentImagePath),
+                        fit: BoxFit.contain,
+                        key: ValueKey(_currentImagePath),
+                      ),
+                    )
+                  : Image.file(
                       File(_currentImagePath),
                       fit: BoxFit.contain,
+                      key: ValueKey(_currentImagePath),
                     ),
-                  )
-                : Image.file(
-                    File(_currentImagePath),
-                    fit: BoxFit.contain,
-                  ),
+            ),
           ),
+          
+          if (_isMagicRemoverMode)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 60,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentPurple.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    "MAGIC REMOVER ACTIVE: TAP TO ERASE",
+                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+
+          if (_isProcessingRemoval)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.accentPurple),
+                    SizedBox(height: 16),
+                    Text("AI Erasing...", style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+            ),
 
           // ── Top gradient ──
           Positioned(
@@ -264,6 +375,15 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     ],
                   ),
                 ),
+                if (_editHistory.isNotEmpty)
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _currentImagePath = _editHistory.removeLast();
+                      });
+                    },
+                    icon: const Icon(Icons.undo, color: Colors.white, size: 28),
+                  ),
                 IconButton(
                   onPressed: _goHome,
                   icon: const Icon(Icons.home, color: Colors.white, size: 28),
@@ -349,8 +469,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       _ProButton(icon: Icons.edit, label: 'Pro Editor', onTap: _openProEditor),
-                      _ProButton(icon: Icons.auto_fix_high, label: 'Remove BG', onTap: _removeBackground),
-                      _ProButton(icon: Icons.picture_as_pdf, label: 'As Doc', onTap: _saveAsPdf),
+                      _ProButton(icon: Icons.auto_fix_high, label: 'Magic Remover', onTap: _magicRemove, isActive: _isMagicRemoverMode),
+                      _ProButton(icon: Icons.file_present, label: 'As Doc', onTap: _shareAsDocument),
                       _ProButton(icon: Icons.qr_code, label: 'WiFi Send', onTap: _shareViaQR),
                     ],
                   ),
@@ -435,8 +555,9 @@ class _ProButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool isActive;
 
-  const _ProButton({required this.icon, required this.label, required this.onTap});
+  const _ProButton({required this.icon, required this.label, required this.onTap, this.isActive = false});
 
   @override
   Widget build(BuildContext context) {
@@ -446,11 +567,15 @@ class _ProButton extends StatelessWidget {
           children: [
              Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, color: Colors.white, size: 20),
+                decoration: BoxDecoration(
+                  color: isActive ? AppColors.accentPurple.withOpacity(0.4) : Colors.white12, 
+                  borderRadius: BorderRadius.circular(10),
+                  border: isActive ? Border.all(color: AppColors.accentPurple) : null,
+                ),
+                child: Icon(icon, color: isActive ? AppColors.accentPurple : Colors.white, size: 20),
              ),
              const SizedBox(height: 4),
-             Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+             Text(label, style: TextStyle(color: isActive ? AppColors.accentPurple : Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
           ],
        ),
     );

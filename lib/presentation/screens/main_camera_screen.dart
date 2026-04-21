@@ -170,13 +170,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   void _processFrame(CameraImage image) {
     if (!_poseDetectorService.isInitialized) return;
-    if (_isRecordingVideo) return; // Optimization: Pause AI during video recording for max clarity
-    
     final mode = _cameraModes[_selectedModeIndex];
     final isPoseMode = mode == 'Poses' || mode == 'Photo Booth';
 
     if (!isPoseMode || _selectedTemplate == null) {
-      // Free up resources if not in pose mode or no template selected
       if (_currentPose != null) {
          setState(() {
            _currentPose = null;
@@ -209,13 +206,13 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
         });
 
         if (result.isMatched && !_matchResult.isMatched) {
-           HapticFeedback.mediumImpact(); // Confirm first match
+           HapticFeedback.mediumImpact(); 
         }
 
         // 1. Gesture detection
         if (_gestureController.checkGesture(pose)) {
           _autoCaptureController?.manualCapture();
-          _voiceService.speak('Awesome gesture! Snapping now.');
+          _voiceService.speak('Awesome gesture! Capture.');
         }
 
         // 2. Voice feedback for posture
@@ -371,15 +368,15 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   void _openReceiveScreen() {
     _cameraController?.stopImageStream().then((_) {
-      if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => WifiShareScreen()),
-        ).then((_) {
-          if (_cameraController != null && _cameraController!.value.isInitialized) {
-            _cameraController!.startImageStream(_processFrame).catchError((e) {});
-          }
-        });
-      }
+      _cameraController?.dispose().then((_) {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => WifiShareScreen()),
+          ).then((_) {
+            _setupCamera(_cameras[_currentCameraIndex]);
+          });
+        }
+      });
     });
   }
 
@@ -453,16 +450,12 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   void _openGallery() {
     if (Theme.of(context).platform == TargetPlatform.android) {
-      const intent = AndroidIntent(
-        action: 'action_view',
-        type: 'image/*',
-        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
-      );
-      intent.launch();
-    } else {
-       ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Opening Gallery...')),
+       const intent = AndroidIntent(
+         action: 'android.intent.action.VIEW',
+         type: 'image/*',
+         flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
        );
+       intent.launch();
     }
   }
 
@@ -533,16 +526,16 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
     FlashMode nextMode;
     switch (_flashMode) {
       case FlashMode.off:
-        nextMode = FlashMode.always;
-        break;
-      case FlashMode.always:
-        nextMode = FlashMode.auto;
+        nextMode = FlashMode.auto; // Start with Auto
         break;
       case FlashMode.auto:
-        nextMode = FlashMode.torch;
+        nextMode = FlashMode.always; // Then On
+        break;
+      case FlashMode.always:
+        nextMode = FlashMode.torch; // Then Torch
         break;
       case FlashMode.torch:
-        nextMode = FlashMode.off;
+        nextMode = FlashMode.off; // Back to Off
         break;
     }
     
@@ -649,96 +642,87 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
               right: 0,
               child: SafeArea(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Left Side: Settings & Receive
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
+                          // Left Side: Settings
                           _ProIconButton(
                             icon: Icons.settings, 
                             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProSettingsScreen())),
                           ),
-                          const SizedBox(width: 10),
-                          GestureDetector(
-                            onTap: _openReceiveScreen,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.black38,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.white12, width: 1),
+
+                          // Right Group: Voice, Flash & Flip
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _ProIconButton(
+                                icon: _voiceEnabled ? Icons.volume_up : Icons.volume_off,
+                                onTap: () {
+                                  setState(() {
+                                    _voiceEnabled = !_voiceEnabled;
+                                    _voiceService.toggle(_voiceEnabled);
+                                  });
+                                },
+                                isActive: _voiceEnabled,
                               ),
-                              child: const Icon(Icons.qr_code_scanner, color: AppColors.accentCyan, size: 18),
-                            ),
+                              const SizedBox(width: 10),
+                              _ProIconButton(
+                                icon: _getFlashIcon(),
+                                onTap: _toggleFlash,
+                                isActive: _flashMode != FlashMode.off,
+                              ),
+                              const SizedBox(width: 10),
+                              _ProIconButton(
+                                icon: Icons.cameraswitch,
+                                onTap: _switchCamera,
+                              ),
+                            ],
                           ),
                         ],
                       ),
-
-                      // AI Cameraman Toggle (Refined Pill)
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _autoFramingEnabled = !_autoFramingEnabled;
-                            if (!_autoFramingEnabled) {
-                              _framingScale = 1.0;
-                              _framingOffset = Offset.zero;
-                            }
-                          });
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: _autoFramingEnabled ? AppColors.accentCyan.withOpacity(0.9) : Colors.black38,
-                            borderRadius: BorderRadius.circular(25),
-                            border: Border.all(
-                              color: _autoFramingEnabled ? AppColors.accentCyan : Colors.white24,
-                              width: 1.5,
-                            ),
-                            boxShadow: _autoFramingEnabled ? [BoxShadow(color: AppColors.accentCyan.withOpacity(0.4), blurRadius: 12)] : null,
-                          ),
-                          child: RawRow(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.face_retouching_natural, 
-                                   color: _autoFramingEnabled ? Colors.black : Colors.white, size: 18),
-                              const SizedBox(width: 8),
-                              Text('AI CAMERAMAN', style: TextStyle(
-                                color: _autoFramingEnabled ? Colors.black : Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.2,
-                              )),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Right Group: Voice, Flash & Flip
+                      const SizedBox(height: 12),
+                      // Zoom Quick Select Chips (Simplified)
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _ProIconButton(
-                            icon: _voiceEnabled ? Icons.volume_up : Icons.volume_off,
+                          _ZoomQuickBtn(label: '0.6x', value: 0.6, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                          _ZoomQuickBtn(label: '1x', value: 1.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                          _ZoomQuickBtn(label: '2x', value: 2.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                          _ZoomQuickBtn(label: '5x', value: 5.0, current: _currentZoomLevel, min: _minZoomLevel, max: _maxZoomLevel, onTap: _setZoom),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // AI Status & Cameraman Centralized Row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (isPoseMode) ...[
+                            _TopCapsule(
+                              onTap: _openReceiveScreen,
+                              icon: Icons.qr_code_scanner,
+                              label: 'QR',
+                              color: Colors.black45,
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          _TopCapsule(
                             onTap: () {
                               setState(() {
-                                _voiceEnabled = !_voiceEnabled;
-                                _voiceService.toggle(_voiceEnabled);
+                                _autoFramingEnabled = !_autoFramingEnabled;
+                                if (!_autoFramingEnabled) {
+                                  _framingScale = 1.0;
+                                  _framingOffset = Offset.zero;
+                                }
                               });
                             },
-                            isActive: _voiceEnabled,
-                          ),
-                          const SizedBox(width: 12),
-                          _ProIconButton(
-                            icon: _getFlashIcon(),
-                            onTap: _toggleFlash,
-                            isActive: _flashMode != FlashMode.off,
-                          ),
-                          const SizedBox(width: 12),
-                          _ProIconButton(
-                            icon: Icons.cameraswitch,
-                            onTap: _switchCamera,
+                            icon: Icons.face_retouching_natural,
+                            label: 'AI CAMERAMAN',
+                            color: _autoFramingEnabled ? AppColors.accentCyan : Colors.black45,
+                            isActive: _autoFramingEnabled,
                           ),
                         ],
                       ),
@@ -1314,6 +1298,51 @@ class RawRow extends StatelessWidget {
     return Row(
       mainAxisSize: mainAxisSize,
       children: children,
+    );
+  }
+}
+class _TopCapsule extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _TopCapsule({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.isActive = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.accentCyan : color,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white12, width: 1),
+          boxShadow: isActive ? [BoxShadow(color: AppColors.accentCyan.withOpacity(0.3), blurRadius: 10)] : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: isActive ? Colors.black : Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(
+              color: isActive ? Colors.black : Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
+            )),
+          ],
+        ),
+      ),
     );
   }
 }

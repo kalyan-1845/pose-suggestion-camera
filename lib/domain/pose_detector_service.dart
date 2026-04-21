@@ -59,10 +59,9 @@ class PoseDetectorService {
 
       final poses = await _poseDetector!.processImage(inputImage);
       
-      // Process segmentation mask if needed (only every 3rd frame to save CPU)
-      if (_frameSkipCount % 3 == 0 && _segmenter != null) {
-        _lastMask = await _segmenter!.processImage(inputImage);
-      }
+      // Performance: Disable real-time background blur to eliminate lag.
+      // Pro Portrait blur will be applied after capture.
+      _lastMask = null;
 
       _isProcessing = false;
       return poses;

@@ -4,6 +4,7 @@ class VoiceGuidanceService {
   final FlutterTts _tts = FlutterTts();
   bool _enabled = true;
   DateTime _lastSpeakTime = DateTime.now();
+  String _lastText = "";
 
   VoiceGuidanceService() {
     _initTts();
@@ -38,12 +39,20 @@ class VoiceGuidanceService {
   Future<void> speak(String text) async {
     if (!_enabled) return;
     
-    // Throttle voice to avoid overlapping and annoyance
     final now = DateTime.now();
-    if (now.difference(_lastSpeakTime).inSeconds < 3 && !text.contains('!')) {
+    bool isUrgent = text.contains('!') || text.contains('Capture');
+    
+    // If text is same as last time, wait at least 5 seconds
+    if (text == _lastText && now.difference(_lastSpeakTime).inSeconds < 5 && !isUrgent) {
+      return;
+    }
+    
+    // Minimum 3 second gap for any non-urgent speech
+    if (now.difference(_lastSpeakTime).inSeconds < 3 && !isUrgent) {
       return;
     }
 
+    _lastText = text;
     _lastSpeakTime = now;
     await _tts.speak(text);
   }

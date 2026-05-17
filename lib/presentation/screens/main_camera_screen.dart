@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image/image.dart' as img;
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/place_constants.dart';
 import '../../data/models/pose_template.dart';
 import '../../data/models/pose_match_result.dart';
 import '../../data/repositories/template_repository.dart';
@@ -20,6 +24,9 @@ import '../widgets/ghost_pose_overlay.dart';
 import '../widgets/feedback_overlay.dart';
 import '../widgets/match_score_indicator.dart';
 import '../widgets/pose_effects_slider.dart';
+import '../widgets/mode_card.dart';
+import '../widgets/place_card.dart';
+import '../widgets/pose_template_card.dart';
 import '../animations/countdown_overlay.dart';
 import '../animations/capture_flash.dart';
 import 'preview_screen.dart';
@@ -41,7 +48,7 @@ class MainCameraScreen extends StatefulWidget {
   State<MainCameraScreen> createState() => _MainCameraScreenState();
 }
 
-class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBindingObserver {
+class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBindingObserver, TickerProviderStateMixin {
   CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
   int _currentCameraIndex = 0;
@@ -56,6 +63,7 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
   bool _isEnhancing = false;
 
   bool _isInitialized = false;
+  bool _isProcessingFrame = false; // Flag to throttle camera stream frame processor to prevent CPU heating/lag
 
   // Camera Modes
   final List<String> _cameraModes = ['Video', 'Photo', 'Portrait', 'Poses', 'Photo Booth'];
@@ -91,6 +99,24 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
   int _videoRecordSeconds = 0;
   Timer? _videoTimer;
 
+  // Settings State
+  bool _gridEnabled = false;
+  bool _mirrorFrontCamera = true;
+  bool _autoBrightness = true;
+  String _watermarkStyle = 'leica';
+  String _auraStyle = 'cyan';
+  String _filmRecipe = 'none';
+  String? _latestPhotoPath;
+
+  // Leo AI Voice Assistant State
+  bool _leoActive = false;
+  String _leoSpeechText = "";
+  AnimationController? _leoAnimationController;
+
+  // Filtering State
+  String _selectedCategory = 'solo'; // 'solo', 'couple', 'friends', 'family'
+  String _selectedPlaceId = 'any';   // 'any', 'beach', 'cafe', etc.
+
   // Pose Specific State
   List<PoseTemplate> _allTemplates = [];
   PoseTemplate? _selectedTemplate;
@@ -109,9 +135,194 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _allTemplates = TemplateRepository.all;
+    _loadSettings();
+    _applySmartContextSuggestions();
+    _filterTemplates(initial: true);
     _initCamera();
     _poseDetectorService.initialize();
+    
+    _leoAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _leoAnimationController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _gridEnabled = prefs.getBool('pro_grid') ?? false;
+        _mirrorFrontCamera = prefs.getBool('pro_mirror') ?? true;
+        _autoBrightness = prefs.getBool('pro_auto_bright') ?? true;
+        _watermarkStyle = prefs.getString('pro_watermark_style') ?? 'leica';
+        _auraStyle = prefs.getString('pro_aura_style') ?? 'cyan';
+        _filmRecipe = prefs.getString('pro_film_recipe') ?? 'none';
+      });
+    }
+  }
+
+  Color _getAuraColor() {
+    switch (_auraStyle) {
+      case 'pink':
+        return const Color(0xFFFF007F); // Cyberpunk Pink
+      case 'green':
+        return const Color(0xFF39FF14); // Toxic Acid Green
+      case 'amber':
+        return const Color(0xFFFFAA00); // Sunset Amber
+      case 'cyan':
+      default:
+        return const Color(0xFF00E5FF); // Electric Arctic Cyan
+    }
+  }
+
+  void _applySmartContextSuggestions() {
+    final now = DateTime.now();
+    if (now.hour >= 17 && now.hour <= 19) {
+      _selectedPlaceId = 'sunset';
+    } else if (now.hour >= 7 && now.hour <= 9) {
+      _selectedPlaceId = 'garden';
+    } else if (now.hour >= 12 && now.hour <= 14) {
+      _selectedPlaceId = 'cafe';
+    } else {
+      _selectedPlaceId = 'any';
+    }
+  }
+
+  double _lastHapticScore = 0.0;
+
+  void _triggerParkingSensorHaptics(double score, bool wasMatched, bool isMatched) {
+    // 1. Lock Transition (Unmatched -> Matched)
+    if (isMatched && !wasMatched) {
+      HapticFeedback.heavyImpact();
+      Future.delayed(const Duration(milliseconds: 100), () => HapticFeedback.mediumImpact());
+      return;
+    }
+
+    // 2. Parking sensor threshold crossings
+    if (score >= 70 && _lastHapticScore < 70 && !isMatched) {
+      HapticFeedback.mediumImpact();
+    } else if (score >= 50 && _lastHapticScore < 50 && score < 70) {
+      HapticFeedback.lightImpact();
+    }
+    
+    _lastHapticScore = score;
+  }
+
+  void _triggerLeoAIScan() async {
+    if (_leoActive) return;
+    
+    setState(() {
+      _leoActive = true;
+      _leoSpeechText = "Hey! Leo here.\nListening to environment context...";
+    });
+
+    _leoAnimationController?.repeat();
+
+    // Siri-style haptic tap trigger
+    HapticFeedback.heavyImpact();
+    await Future.delayed(const Duration(milliseconds: 150));
+    HapticFeedback.lightImpact();
+
+    // Dynamic environment scan
+    final now = DateTime.now();
+    String detectedEnvironment = "daylight";
+    String recommendedTemplate = "Standing Outdoor";
+    String recomPlace = "garden";
+
+    if (now.hour >= 17 && now.hour <= 19) {
+      detectedEnvironment = "Sunset Golden Hour";
+      recommendedTemplate = "Sunset Silhouette";
+      recomPlace = "sunset";
+    } else if (now.hour >= 12 && now.hour <= 14) {
+      detectedEnvironment = "Midday Cafe Vibe";
+      recommendedTemplate = "Cozy Cafe Seated";
+      recomPlace = "cafe";
+    } else {
+      detectedEnvironment = "Bright Morning Park";
+      recommendedTemplate = "Standing Outdoor";
+      recomPlace = "garden";
+    }
+
+    setState(() {
+      _selectedPlaceId = recomPlace;
+      _watermarkStyle = 'leica'; // Force premium Leica specs for master level capture
+    });
+    
+    _filterTemplates();
+
+    final speechText = "Hey there! Leo here. Scanning your scene... "
+        "I've detected beautiful $detectedEnvironment lighting. "
+        "Applying our premium Leica M11 profile and loading a master-class $recommendedTemplate guide. "
+        "Get in frame and prepare to strike a pose! I will capture your shot in 3 seconds!";
+
+    setState(() {
+      _leoSpeechText = "Scanning scene...\n\n[SUCCESS] Detected $detectedEnvironment\n[APPLIED] Leica M11 Color Style\n[LOADED] $recommendedTemplate Pose";
+    });
+
+    await _voiceService.speak(speechText);
+
+    // Give voice assistant 6 seconds to comfortably complete speaking before capturing
+    await Future.delayed(const Duration(seconds: 6));
+
+    if (!mounted) return;
+    _startLeoCountdown();
+  }
+
+  void _startLeoCountdown() async {
+    setState(() {
+      _leoActive = false;
+      _leoSpeechText = "";
+      _showCountdown = true;
+      _countdownValue = 3;
+    });
+
+    _leoAnimationController?.stop();
+
+    for (int i = 3; i > 0; i--) {
+      if (!mounted) return;
+      setState(() {
+        _countdownValue = i;
+      });
+      HapticFeedback.mediumImpact();
+      await _voiceService.speak("$i");
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _showCountdown = false;
+    });
+
+    // Capture the premium master photo!
+    _takePhoto();
+  }
+
+  void _filterTemplates({bool initial = false}) {
+    final filtered = TemplateRepository.byCategoryAndPlace(_selectedCategory, _selectedPlaceId);
+    if (mounted) {
+      setState(() {
+        _allTemplates = filtered;
+        if (filtered.isNotEmpty) {
+          _selectedTemplate = filtered.first;
+        } else {
+          _selectedTemplate = null;
+        }
+      });
+    } else if (initial) {
+      _allTemplates = filtered;
+      if (filtered.isNotEmpty) {
+        _selectedTemplate = filtered.first;
+      } else {
+        _selectedTemplate = null;
+      }
+    }
   }
 
   Future<void> _initCamera() async {
@@ -173,6 +384,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   void _processFrame(CameraImage image) {
     if (!_poseDetectorService.isInitialized) return;
+    if (_isProcessingFrame) return; // Drop redundant/overlapping camera frames to cool down device and stop UI lag!
+    
     final mode = _cameraModes[_selectedModeIndex];
     final isPoseMode = mode == 'Poses' || mode == 'Photo Booth';
 
@@ -195,11 +408,14 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
       orElse: () => InputImageRotation.rotation0deg,
     );
 
+    _isProcessingFrame = true; // Lock process
     _poseDetectorService.processFrame(image, camera, sensorOrientation).then((poses) {
+      _isProcessingFrame = false; // Unlock process
       if (!mounted) return;
 
       if (poses.isNotEmpty && _selectedTemplate != null) {
         final pose = poses.first;
+        final wasMatched = _matchResult.isMatched;
         final result = PoseMatchingEngine.compare(pose, _selectedTemplate!);
 
         setState(() {
@@ -208,14 +424,23 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
           _updateAutoFraming(pose);
         });
 
-        if (result.isMatched && !_matchResult.isMatched) {
-           HapticFeedback.mediumImpact(); 
-        }
+        // Smart Parking Sensor Haptics (Feedback guidance)
+        _triggerParkingSensorHaptics(result.score, wasMatched, result.isMatched);
 
-        // 1. Gesture detection
-        if (_gestureController.checkGesture(pose)) {
+        // 1. Hands-Free Gesture detection
+        if (_gestureController.checkRightHandWave(pose)) {
           _autoCaptureController?.manualCapture();
           _voiceService.speak('Awesome gesture! Capture.');
+        } else if (_gestureController.checkLeftHandVictory(pose)) {
+          // Instantly switch to Photo Booth mode if not active
+          if (_cameraModes[_selectedModeIndex] != 'Photo Booth') {
+            setState(() {
+              _selectedModeIndex = _cameraModes.indexOf('Photo Booth');
+              _photoBoothImages.clear();
+            });
+          }
+          _autoCaptureController?.manualCapture();
+          _voiceService.speak('Left hand victory detected! High-Speed Photo Booth collage initiated!');
         }
 
         // 2. Voice feedback for posture
@@ -233,6 +458,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
           _framingOffset = Offset.zero;
         });
       }
+    }).catchError((e) {
+      _isProcessingFrame = false; // Safe unlock on error
     });
   }
 
@@ -309,35 +536,24 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
            _photoBoothImages.clear();
         }
       } else {
-        // Standard single photo
-        // Stop stream before navigating to preview
-        _cameraController?.stopImageStream().then((_) {
-          if (mounted) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => PreviewScreen(
-                  imagePath: processedPath,
-                  templateId: _selectedTemplate?.id ?? 'custom',
-                  templateName: _selectedTemplate?.name ?? 'Standard Photo',
-                  matchScore: mode == 'Poses' ? _matchResult.score : 100.0,
-                  isFrontCamera: _currentCameraIndex == 1,
-                ),
-              ),
-            ).then((_) {
-               // Resume camera stream when returning
-               _showGhostPose = true; 
-               _autoCaptureController?.reset();
-               if (_cameraController != null && _cameraController!.value.isInitialized) {
-                   _cameraController!.startImageStream(_processFrame).catchError((e){});
-               }
-            });
-          }
-        });
+        // Standard single photo auto-saves in the background like native camera apps!
+        if (mounted) {
+          setState(() {
+            _latestPhotoPath = processedPath;
+          });
+        }
+
+        // Allow immediate next capture
+        _autoCaptureController?.reset();
 
         Gal.putImage(processedPath).then((_) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('AuraPose AI photo saved to Gallery!')),
+              const SnackBar(
+                content: Text('AuraPose AI photo saved to Gallery!'),
+                duration: Duration(milliseconds: 1500),
+                backgroundColor: Colors.black87,
+              ),
             );
           }
         });
@@ -352,8 +568,64 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
       final file = File(path);
       Uint8List bytes = await file.readAsBytes();
 
+      // 0. Permanent EXIF Orientation Baking & Front Camera Mirroring
+      img.Image? decoded = img.decodeImage(bytes);
+      if (decoded != null) {
+        // Bake EXIF orientation directly into the pixels so it never displays rotated in editors
+        decoded = img.bakeOrientation(decoded);
+        
+        // Mirror horizontally if front camera selfie and mirroring is enabled
+        if (_currentCameraIndex == 1 && _mirrorFrontCamera) {
+          decoded = img.flipHorizontal(decoded);
+        }
+
+        // Apply Selected Analog Film Recipe (Flagship Color Simulation)
+        if (_filmRecipe != 'none') {
+          final math.Random random = math.Random();
+          for (int y = 0; y < decoded.height; y++) {
+            for (int x = 0; x < decoded.width; x++) {
+              final pixel = decoded.getPixel(x, y);
+              int r = pixel.r.toInt();
+              int g = pixel.g.toInt();
+              int b = pixel.b.toInt();
+              
+              if (_filmRecipe == 'classic_chrome') {
+                // Fujifilm Classic Chrome: Cool teal cast, desaturated warm tones
+                r = (r * 0.92).toInt().clamp(0, 255);
+                g = (g * 1.04).toInt().clamp(0, 255);
+                b = (b * 1.08).toInt().clamp(0, 255);
+              } else if (_filmRecipe == 'portra_400') {
+                // Kodak Portra 400: Warm golds, rich orange, pulled down blue shadows
+                r = (r * 1.12).toInt().clamp(0, 255);
+                g = (g * 1.05).toInt().clamp(0, 255);
+                b = (b * 0.88).toInt().clamp(0, 255);
+              } else if (_filmRecipe == 'noir_grain') {
+                // Aura Noir: High-contrast silver monochrome with organic film grain
+                int gray = (0.299 * r + 0.587 * g + 0.114 * b).toInt();
+                gray = (((gray - 128) * 1.25) + 128).toInt().clamp(0, 255);
+                final grain = random.nextInt(26) - 13;
+                gray = (gray + grain).clamp(0, 255);
+                r = gray;
+                g = gray;
+                b = gray;
+              }
+              
+              pixel.r = r;
+              pixel.g = g;
+              pixel.b = b;
+            }
+          }
+        }
+        
+        bytes = Uint8List.fromList(img.encodeJpg(decoded, quality: 95));
+      }
+
       // 1. Mandatory Cinematic Watermark
-      bytes = await WatermarkService.applyCinematicWatermark(bytes, "iQOO Z6 Lite 5G");
+      bytes = await WatermarkService.applyCinematicWatermark(
+        bytes, 
+        "iQOO Z6 Lite 5G",
+        watermarkStyle: _watermarkStyle,
+      );
 
       // 2. AI Magic Enhance (Flagship Pass)
       // This sharpens, fixes colors and reduces noise
@@ -397,6 +669,315 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
 
   void _toggleGhostPose() {
     setState(() => _showGhostPose = !_showGhostPose);
+  }
+
+  void _showPoseCatalogSheet() {
+    final TextEditingController searchController = TextEditingController();
+    String query = '';
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            // Get all matching templates based on current selections and search query
+            final categoryCounts = TemplateRepository.categoryCounts;
+            
+            // Search & filter matching templates
+            List<PoseTemplate> filteredTemplates = TemplateRepository.byCategoryAndPlace(_selectedCategory, _selectedPlaceId);
+            if (query.isNotEmpty) {
+              filteredTemplates = filteredTemplates.where((t) => t.name.toLowerCase().contains(query.toLowerCase())).toList();
+            }
+            
+            return BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.85,
+                padding: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.background.withOpacity(0.92),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(30),
+                    topRight: Radius.circular(30),
+                  ),
+                  border: Border.all(color: AppColors.glassBorder, width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    // Slide Handle
+                    Container(
+                      width: 40,
+                      height: 5,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white30,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    // Sheet Header
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Pose & Location Hub",
+                                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                "Select location and matches will be ranked automatically",
+                                style: TextStyle(color: AppColors.textSecondary.withOpacity(0.8), fontSize: 11),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close, color: Colors.white54),
+                          )
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Search Bar
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: AppColors.glassBorder),
+                        ),
+                        child: TextField(
+                          controller: searchController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: "Search 50+ aesthetic poses...",
+                            hintStyle: const TextStyle(color: AppColors.textMuted),
+                            prefixIcon: const Icon(Icons.search, color: AppColors.accentCyan),
+                            suffixIcon: query.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, color: Colors.white54),
+                                    onPressed: () {
+                                      searchController.clear();
+                                      setSheetState(() => query = '');
+                                    },
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onChanged: (val) {
+                            setSheetState(() => query = val);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Bottom Sheet Content List
+                    Expanded(
+                      child: ListView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        children: [
+                          // 1. Choose Category Section
+                          const Text(
+                            "POSE CATEGORY",
+                            style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 110,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              children: [
+                                ModeCard(
+                                  title: 'Solo',
+                                  subtitle: 'Self portraits',
+                                  icon: Icons.person,
+                                  emoji: '🧍',
+                                  poseCount: categoryCounts['solo'] ?? 0,
+                                  gradient: AppColors.modeGradients[0],
+                                  onTap: () {
+                                    setSheetState(() {
+                                      _selectedCategory = 'solo';
+                                    });
+                                    _filterTemplates();
+                                    HapticFeedback.mediumImpact();
+                                  },
+                                ),
+                                const SizedBox(width: 12),
+                                ModeCard(
+                                  title: 'Couple',
+                                  subtitle: 'Romantic & fun',
+                                  icon: Icons.favorite,
+                                  emoji: '👩‍❤️‍👨',
+                                  poseCount: categoryCounts['couple'] ?? 0,
+                                  gradient: AppColors.modeGradients[1],
+                                  onTap: () {
+                                    setSheetState(() {
+                                      _selectedCategory = 'couple';
+                                    });
+                                    _filterTemplates();
+                                    HapticFeedback.mediumImpact();
+                                  },
+                                ),
+                                const SizedBox(width: 12),
+                                ModeCard(
+                                  title: 'Friends',
+                                  subtitle: 'Group photos',
+                                  icon: Icons.people,
+                                  emoji: '👯',
+                                  poseCount: categoryCounts['friends'] ?? 0,
+                                  gradient: AppColors.modeGradients[2],
+                                  onTap: () {
+                                    setSheetState(() {
+                                      _selectedCategory = 'friends';
+                                    });
+                                    _filterTemplates();
+                                    HapticFeedback.mediumImpact();
+                                  },
+                                ),
+                                const SizedBox(width: 12),
+                                ModeCard(
+                                  title: 'Family',
+                                  subtitle: 'Warm bonding',
+                                  icon: Icons.home,
+                                  emoji: '👨‍👩‍👧‍👦',
+                                  poseCount: categoryCounts['family'] ?? 0,
+                                  gradient: AppColors.modeGradients[3],
+                                  onTap: () {
+                                    setSheetState(() {
+                                      _selectedCategory = 'family';
+                                    });
+                                    _filterTemplates();
+                                    HapticFeedback.mediumImpact();
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          // 1.5 Scene selection using PlaceCards
+                          const SizedBox(height: 24),
+                          const Text(
+                            "SCENE / LOCATION",
+                            style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 120,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: PlaceConstants.places.length,
+                              itemBuilder: (context, index) {
+                                final place = PlaceConstants.places[index];
+                                // Count how many poses in this category match the place
+                                final poseCount = TemplateRepository.countByPlace(_selectedCategory, place.id);
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: SizedBox(
+                                    width: 140,
+                                    child: PlaceCard(
+                                      place: place,
+                                      poseCount: poseCount,
+                                      onTap: () {
+                                        setSheetState(() {
+                                          _selectedPlaceId = place.id;
+                                        });
+                                        _filterTemplates();
+                                        HapticFeedback.mediumImpact();
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          // Active filters pill row (Category filter indication)
+                          Row(
+                            children: [
+                              Text(
+                                "POSE IDEAS FOR ${_selectedCategory.toUpperCase()} - ${_selectedPlaceId.toUpperCase()}",
+                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                              ),
+                              const Spacer(),
+                              Text(
+                                "${filteredTemplates.length} matches",
+                                style: const TextStyle(color: AppColors.accentCyan, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          
+                          // 2. Main Poses Grid
+                          filteredTemplates.isEmpty
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 40),
+                                  child: const Center(
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.search_off, color: Colors.white24, size: 48),
+                                        SizedBox(height: 12),
+                                        Text(
+                                          "No poses found for this query",
+                                          style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: filteredTemplates.length,
+                                  itemBuilder: (context, index) {
+                                    final template = filteredTemplates[index];
+                                    final isSelected = template.id == _selectedTemplate?.id;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: PoseTemplateCard(
+                                        template: template,
+                                        isSuggested: isSelected,
+                                        onTap: () {
+                                          setState(() {
+                                            _selectedTemplate = template;
+                                            _matchResult = PoseMatchResult.empty;
+                                          });
+                                          _autoCaptureController?.reset();
+                                          HapticFeedback.mediumImpact();
+                                          Navigator.pop(context); // Close catalog sheet
+                                        },
+                                      ),
+                                    );
+                                  },
+                                ),
+                          const SizedBox(height: 40),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _onModeSelected(int index) {
@@ -591,6 +1172,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             onDoubleTap: _switchCamera,
             onScaleStart: (details) {
               _baseZoomLevel = _currentZoomLevel;
+              setState(() => _isZoomDragging = true);
+            },
+            onScaleEnd: (details) {
+              setState(() => _isZoomDragging = false);
             },
             onScaleUpdate: (details) async {
               if (_cameraController == null) return;
@@ -632,18 +1217,33 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
             },
             child: ClipRect(
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
+                duration: _isZoomDragging ? Duration.zero : const Duration(milliseconds: 300),
                 curve: Curves.easeOut,
                 transform: Matrix4.identity()
                   ..translate(_framingOffset.dx, _framingOffset.dy)
                   ..scale(_framingScale * _digitalZoomScale),
                 alignment: Alignment.center,
                 child: Center(
-                  child: RepaintBoundary(child: CameraPreview(_cameraController!)),
+                  child: RepaintBoundary(
+                    child: AspectRatio(
+                      aspectRatio: 1 / _cameraController!.value.aspectRatio,
+                      child: CameraPreview(_cameraController!),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
+
+          // ── Rule of Thirds Grid Overlay ──
+          if (_gridEnabled && !_isCleanView)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: GridPainter(),
+                ),
+              ),
+            ),
 
           // ── Top Action Bar (Flagship Style) ──
           if (!_isCleanView)
@@ -663,7 +1263,10 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                           // Left Side: Settings
                           _ProIconButton(
                             icon: Icons.settings, 
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProSettingsScreen())),
+                            onTap: () => Navigator.push(
+                              context, 
+                              MaterialPageRoute(builder: (_) => const ProSettingsScreen())
+                            ).then((_) => _loadSettings()),
                           ),
 
                           // Right Group: Voice, Flash & Flip
@@ -764,11 +1367,26 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                   imageSize: _imageSize,
                   rotation: _imageRotation,
                   isFrontCamera: _currentCameraIndex == 1,
+                  isMatched: _matchResult.score >= 80.0,
+                  auraColor: _getAuraColor(),
                 ),
               ),
 
-            // Skeleton rendering removed per user request for cleaner UI
-            // The AI logic for matching still runs in background.
+            // Advanced AI Joint Correction Compass Overlay
+            if (_showGhostPose && _currentPose != null && !_isCleanView)
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: SkeletonPainter(
+                    pose: _currentPose!,
+                    imageSize: _imageSize,
+                    rotation: _imageRotation,
+                    matchResult: _matchResult,
+                    isFrontCamera: _currentCameraIndex == 1,
+                    template: _selectedTemplate!,
+                    accentColor: _getAuraColor(),
+                  ),
+                ),
+              ),
 
             // Match Score Indicator (top right)
             Positioned(
@@ -851,6 +1469,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                   ),
                   // Professional Zoom Ticks (Interactive)
                   GestureDetector(
+                    onPanStart: (details) => setState(() => _isZoomDragging = true),
+                    onPanEnd: (details) => setState(() => _isZoomDragging = false),
                     onPanUpdate: (details) {
                       final box = context.findRenderObject() as RenderBox;
                       final localOffset = box.globalToLocal(details.globalPosition);
@@ -909,6 +1529,8 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                         value: _currentZoomLevel.clamp(_minZoomLevel, 100.0),
                         min: _minZoomLevel,
                         max: 100.0, // Support up to 100x in UI
+                        onChangeStart: (v) => setState(() => _isZoomDragging = true),
+                        onChangeEnd: (v) => setState(() => _isZoomDragging = false),
                         onChanged: _setZoom,
                       ),
                     ),
@@ -1031,7 +1653,62 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Pose Effects Slider (Instagram style)
-                  if (isPoseMode)
+                  if (isPoseMode) ...[
+                    // Horizontal scrolling Location scene chips
+                    SizedBox(
+                      height: 38,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: PlaceConstants.places.length,
+                        itemBuilder: (context, index) {
+                          final place = PlaceConstants.places[index];
+                          final isSelected = place.id == _selectedPlaceId;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedPlaceId = place.id;
+                                _filterTemplates();
+                              });
+                              HapticFeedback.selectionClick();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.only(right: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSelected ? AppColors.accentCyan.withOpacity(0.18) : Colors.black45,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.accentCyan : Colors.white12,
+                                  width: 1,
+                                ),
+                                boxShadow: isSelected
+                                    ? [BoxShadow(color: AppColors.accentCyan.withOpacity(0.2), blurRadius: 8)]
+                                    : [],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(place.icon, color: isSelected ? AppColors.accentCyan : Colors.white60, size: 14),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    place.name,
+                                    style: TextStyle(
+                                      color: isSelected ? AppColors.accentCyan : Colors.white70,
+                                      fontSize: 11,
+                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     PoseEffectsSlider(
                       templates: _allTemplates,
                       selectedTemplate: _selectedTemplate,
@@ -1042,9 +1719,9 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                         });
                         _autoCaptureController?.reset();
                       },
-                    )
-                  else
-                     const SizedBox(height: 110), // Placeholder to keep button stable
+                    ),
+                  ] else
+                     const SizedBox(height: 162), // Placeholder to keep layout stable
 
                   const SizedBox(height: 20),
 
@@ -1069,9 +1746,38 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Gallery Thumbnail Button
+                      // Gallery / Latest Snap Live Preview Thumbnail Bubble
                       GestureDetector(
-                        onTap: _openGallery,
+                        onTap: () {
+                          if (_latestPhotoPath != null) {
+                            // Instant high-fidelity pose evaluation editor view!
+                            _cameraController?.stopImageStream().then((_) {
+                              if (mounted) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => PreviewScreen(
+                                      imagePath: _latestPhotoPath!,
+                                      templateId: _selectedTemplate?.id ?? 'custom',
+                                      templateName: _selectedTemplate?.name ?? 'Standard Photo',
+                                      matchScore: mode == 'Poses' ? _matchResult.score : 100.0,
+                                      isFrontCamera: _currentCameraIndex == 1,
+                                    ),
+                                  ),
+                                ).then((_) {
+                                   // Resume camera stream when returning
+                                   _showGhostPose = true; 
+                                   _autoCaptureController?.reset();
+                                   if (_cameraController != null && _cameraController!.value.isInitialized) {
+                                       _cameraController!.startImageStream(_processFrame).catchError((e){});
+                                   }
+                                });
+                              }
+                            });
+                          } else {
+                            // Fallback to native system photo library intent
+                            _openGallery();
+                          }
+                        },
                         child: Container(
                           width: 46,
                           height: 46,
@@ -1079,9 +1785,26 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                             shape: BoxShape.rectangle,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: Colors.white, width: 2),
-                            color: Colors.white24,
+                            color: Colors.black38,
+                            boxShadow: _latestPhotoPath != null
+                                ? [
+                                    BoxShadow(
+                                      color: _getAuraColor().withOpacity(0.5),
+                                      blurRadius: 6,
+                                      spreadRadius: 1,
+                                    )
+                                  ]
+                                : null,
+                            image: _latestPhotoPath != null
+                                ? DecorationImage(
+                                    image: FileImage(File(_latestPhotoPath!)),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                           ),
-                          child: const Icon(Icons.photo_library, color: Colors.white70, size: 20),
+                          child: _latestPhotoPath == null
+                              ? const Icon(Icons.photo_library, color: Colors.white70, size: 20)
+                              : null,
                         ),
                       ),
                       
@@ -1126,8 +1849,20 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                         ),
                       ),
                       
-                      // Empty space for symmetry (like camera switch icon is normally here in some apps)
-                      const SizedBox(width: 46),
+                      // Pose Catalog Bottom Sheet Button
+                      GestureDetector(
+                        onTap: _showPoseCatalogSheet,
+                        child: Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white24, width: 1.5),
+                            color: Colors.black45,
+                          ),
+                          child: const Icon(Icons.grid_view, color: AppColors.accentCyan, size: 20),
+                        ),
+                      ),
                     ],
                   ),
 
@@ -1257,7 +1992,96 @@ class _MainCameraScreenState extends State<MainCameraScreen> with WidgetsBinding
                   ),
                 ),
               ),
+            // ── Leo AI floating trigger button ──
+          if (!_isCleanView && isPoseMode)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 130,
+              right: 16,
+              child: GestureDetector(
+                onTap: _triggerLeoAIScan,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFff2d55), Color(0xFF5856d6), Color(0xFF007aff)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF5856d6).withOpacity(0.6),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      )
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.blur_on,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
             ),
+
+          // ── Fullscreen Siri Mesh Orb Overlay ──
+          if (_leoActive) ...[
+            // Blur Background
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(
+                  color: Colors.black.withOpacity(0.4),
+                ),
+              ),
+            ),
+            // Glowing Animated Mesh Orb at the bottom center
+            Positioned(
+              bottom: 80,
+              left: 0,
+              right: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Text Bubble from Assistant Leo
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Text(
+                      _leoSpeechText,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  // Pulse Mesh Orb
+                  AnimatedBuilder(
+                    animation: _leoAnimationController!,
+                    builder: (context, child) {
+                      return SizedBox(
+                        width: 150,
+                        height: 150,
+                        child: CustomPaint(
+                          painter: SiriOrbPainter(_leoAnimationController!.value),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1401,4 +2225,66 @@ class _TopCapsule extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Custom painter to draw Rule of Thirds 3x3 grid lines
+class GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.25)
+      ..strokeWidth = 1.0;
+
+    // Draw vertical lines
+    canvas.drawLine(Offset(size.width / 3, 0), Offset(size.width / 3, size.height), paint);
+    canvas.drawLine(Offset(size.width * 2 / 3, 0), Offset(size.width * 2 / 3, size.height), paint);
+
+    // Draw horizontal lines
+    canvas.drawLine(Offset(0, size.height / 3), Offset(size.width, size.height / 3), paint);
+    canvas.drawLine(Offset(0, size.height * 2 / 3), Offset(size.width, size.height * 2 / 3), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class SiriOrbPainter extends CustomPainter {
+  final double animationValue;
+
+  SiriOrbPainter(this.animationValue);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    
+    // Create animated multi-color gradient
+    final gradient = RadialGradient(
+      center: Alignment(
+        0.3 * math.sin(animationValue * 2 * math.pi),
+        0.3 * math.cos(animationValue * 2 * math.pi),
+      ),
+      radius: 0.8 + 0.15 * math.sin(animationValue * 4 * math.pi),
+      colors: const [
+        Color(0xFFFF2D55), // Neon pink
+        Color(0xFF5856D6), // Purple
+        Color(0xFF007AFF), // Blue
+        Color(0x00007AFF), // Transparent
+      ],
+      stops: const [0.0, 0.3, 0.6, 1.0],
+    );
+
+    final paint = Paint()
+      ..shader = gradient.createShader(rect)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height / 2),
+      (size.width / 2) * (0.95 + 0.05 * math.sin(animationValue * 2 * math.pi)),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant SiriOrbPainter oldDelegate) =>
+      oldDelegate.animationValue != animationValue;
 }

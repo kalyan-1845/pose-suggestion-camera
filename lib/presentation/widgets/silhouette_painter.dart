@@ -5,17 +5,19 @@ import 'package:flutter/material.dart';
 class SilhouettePainter extends CustomPainter {
   final List<Offset> points;
   final bool isMatched;
+  final Color auraColor;
 
   SilhouettePainter({
     required this.points,
     this.isMatched = false,
+    this.auraColor = Colors.white,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (points.length < 33) return;
 
-    final Color primaryColor = isMatched ? Colors.greenAccent : Colors.white;
+    final Color primaryColor = isMatched ? Colors.greenAccent : auraColor;
     
     // Paint styles
     final glowPaint = Paint()

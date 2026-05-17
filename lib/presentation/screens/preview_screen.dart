@@ -263,20 +263,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 0, 0, _contrast, 0, _brightness * 30,
                 0, 0, 0, 1, 0,
               ]),
-              child: widget.isFrontCamera
-                  ? Transform.scale(
-                      scaleX: -1,
-                      child: Image.file(
-                        File(_currentImagePath),
-                        fit: BoxFit.contain,
-                        key: ValueKey(_currentImagePath),
-                      ),
-                    )
-                  : Image.file(
-                      File(_currentImagePath),
-                      fit: BoxFit.contain,
-                      key: ValueKey(_currentImagePath),
-                    ),
+              child: Image.file(
+                File(_currentImagePath),
+                fit: BoxFit.contain,
+                key: ValueKey(_currentImagePath),
+              ),
             ),
           ),
           

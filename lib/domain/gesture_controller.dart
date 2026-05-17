@@ -2,46 +2,76 @@ import 'dart:math';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 class GestureController {
-  bool _gestureActive = false;
-  DateTime? _gestureStartTime;
-  
-  /// Minimum time (in ms) to hold a gesture to trigger it
-  static const int _holdDuration = 1000; 
+  bool _rightActive = false;
+  DateTime? _rightStartTime;
 
-  bool checkGesture(Pose pose) {
+  bool _leftActive = false;
+  DateTime? _leftStartTime;
+  
+  static const int _holdDuration = 1000; // in milliseconds
+
+  /// Checks for Right Hand Wave -> triggers Single Capture
+  bool checkRightHandWave(Pose pose) {
     final landmarks = pose.landmarks;
+    final wrist = landmarks[PoseLandmarkType.rightWrist];
+    final indexTip = landmarks[PoseLandmarkType.rightIndex];
+    final shoulder = landmarks[PoseLandmarkType.rightShoulder];
     
-    // Check for "Hand Raise" or "Palm" gesture
-    // Using Right Hand as standard
-    final rightWrist = landmarks[PoseLandmarkType.rightWrist];
-    final rightIndex = landmarks[PoseLandmarkType.rightIndex];
-    final rightShoulder = landmarks[PoseLandmarkType.rightShoulder];
-    
-    if (rightWrist != null && rightIndex != null && rightShoulder != null) {
-      // 1. Hand is raised above shoulder
-      final isHandRaised = rightWrist.y < rightShoulder.y;
-      
-      // 2. Arm is somewhat extended (using distance from wrist to index tip as proxy)
-      final armDist = sqrt(pow(rightWrist.x - rightIndex.x, 2) + pow(rightWrist.y - rightIndex.y, 2));
-      final isPalmRaised = isHandRaised && armDist > 20; // Arbitrary threshold for index extension
+    if (wrist != null && indexTip != null && shoulder != null) {
+      final isHandRaised = wrist.y < shoulder.y;
+      final armDist = sqrt(pow(wrist.x - indexTip.x, 2) + pow(wrist.y - indexTip.y, 2));
+      final isPalmRaised = isHandRaised && armDist > 20;
 
       if (isPalmRaised) {
-        if (!_gestureActive) {
-          _gestureActive = true;
-          _gestureStartTime = DateTime.now();
-        } else if (_gestureStartTime != null && 
-                   DateTime.now().difference(_gestureStartTime!).inMilliseconds > _holdDuration) {
-          // Trigger!
-          _gestureActive = false;
-          _gestureStartTime = null;
+        if (!_rightActive) {
+          _rightActive = true;
+          _rightStartTime = DateTime.now();
+        } else if (_rightStartTime != null && 
+                   DateTime.now().difference(_rightStartTime!).inMilliseconds > _holdDuration) {
+          _rightActive = false;
+          _rightStartTime = null;
           return true;
         }
       } else {
-        _gestureActive = false;
-        _gestureStartTime = null;
+        _rightActive = false;
+        _rightStartTime = null;
       }
     }
-    
     return false;
+  }
+
+  /// Checks for Left Hand Victory salute -> triggers Photo Booth Collage Capture
+  bool checkLeftHandVictory(Pose pose) {
+    final landmarks = pose.landmarks;
+    final wrist = landmarks[PoseLandmarkType.leftWrist];
+    final indexTip = landmarks[PoseLandmarkType.leftIndex];
+    final shoulder = landmarks[PoseLandmarkType.leftShoulder];
+    
+    if (wrist != null && indexTip != null && shoulder != null) {
+      final isHandRaised = wrist.y < shoulder.y;
+      final armDist = sqrt(pow(wrist.x - indexTip.x, 2) + pow(wrist.y - indexTip.y, 2));
+      final isPalmRaised = isHandRaised && armDist > 20;
+
+      if (isPalmRaised) {
+        if (!_leftActive) {
+          _leftActive = true;
+          _leftStartTime = DateTime.now();
+        } else if (_leftStartTime != null && 
+                   DateTime.now().difference(_leftStartTime!).inMilliseconds > _holdDuration) {
+          _leftActive = false;
+          _leftStartTime = null;
+          return true;
+        }
+      } else {
+        _leftActive = false;
+        _leftStartTime = null;
+      }
+    }
+    return false;
+  }
+
+  // Backwards compatibility for single gesture check
+  bool checkGesture(Pose pose) {
+    return checkRightHandWave(pose);
   }
 }

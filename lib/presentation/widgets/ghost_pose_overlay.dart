@@ -9,6 +9,8 @@ class GhostPoseOverlay extends StatelessWidget {
   final Size imageSize;
   final InputImageRotation rotation;
   final bool isFrontCamera;
+  final bool isMatched;
+  final Color auraColor;
 
   const GhostPoseOverlay({
     super.key,
@@ -16,6 +18,8 @@ class GhostPoseOverlay extends StatelessWidget {
     required this.imageSize,
     required this.rotation,
     required this.isFrontCamera,
+    this.isMatched = false,
+    this.auraColor = Colors.white,
   });
 
   @override
@@ -37,6 +41,8 @@ class GhostPoseOverlay extends StatelessWidget {
     return CustomPaint(
       painter: SilhouettePainter(
         points: scaledPoints,
+        isMatched: isMatched,
+        auraColor: auraColor,
       ),
     );
   }

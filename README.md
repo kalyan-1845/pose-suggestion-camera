@@ -1,17 +1,41 @@
-# pose_suggestion_camera
+# 📸 Pose AI Camera — Intelligent Mobile Framing
 
-A new Flutter project.
+[![Flutter](https://img.shields.io/badge/Flutter-Dart-02569B?style=flat-square&logo=flutter)](https://flutter.dev/)
+[![MLKit](https://img.shields.io/badge/Google--ML--Kit-Pose--Detection-4285F4?style=flat-square&logo=google)](https://developers.google.com/ml-kit)
+[![Android](https://img.shields.io/badge/Android-Native--Performance-3DDC84?style=flat-square&logo=android)](https://www.android.com/)
 
-## Getting Started
+A premium, high-performance mobile application engineered to assist photographers and content creators by suggesting perfect camera framings and body postures in real-time, leveraging on-device ML pose estimation models.
 
-This project is a starting point for a Flutter application.
+```mermaid
+graph TD
+    Cam[Camera Stream] -->|Asynchronous YUV Frames| Controller[Camera Controller]
+    Controller -->|On-Device Image Streaming| MLKit[Google ML Kit Pose Engine]
+    MLKit -->|Body Pose Coordinates| Calc[Vector Angular Solver]
+    Calc -->|Angle & Skeleton Matching| Suggest[Framing & Suggester Layer]
+    Suggest -->|Overlay UI Render| Screen[Interactive Mobile Overlay]
+```
 
-A few resources to get you started if this is your first Flutter project:
+## ⚡ Core Features
+- **On-Device Computer Vision**: Leveraging Google ML Kit Pose Detection for real-time skeleton tracking at 30+ FPS.
+- **Asymmetric Vector Angle Solver**: Translates coordinate maps into exact physical posture angular discrepancies.
+- **Real-Time Interactive Skeleton Overlay**: Smooth rendering of dynamic joint lines on high-resolution camera canvases.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## 🛠 Architecture
+- **Language Core**: Dart 3.x
+- **UI Platform**: Flutter Framework
+- **Hardware Integration**: Camera plugins with custom background frame isolator streams.
+- **Inference Layer**: Google ML Kit Pose ML Engine.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🚀 Installation & Setup
+1. Ensure Flutter is installed and configured on your system PATH.
+2. Initialize dependencies:
+   ```bash
+   flutter pub get
+   ```
+3. Compile and execute on connected mobile device:
+   ```bash
+   flutter run --release
+   ```
+
+## 📜 License
+MIT License. Created by Kalyan Reddy.
